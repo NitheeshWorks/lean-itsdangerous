@@ -1,1 +1,5 @@
-import LeanItsdangerous.DataTypes.Basic
+import LeanItsdangerous.DataTypes.Bytes
+import LeanItsdangerous.DataTypes.Alphabet
+import LeanItsdangerous.DataTypes.Errors
+import LeanItsdangerous.DataTypes.Hash
+import LeanItsdangerous.DataTypes.Signer

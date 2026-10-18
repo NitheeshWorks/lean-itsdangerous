@@ -1,4 +1,5 @@
 import LeanItsdangerous.APIs
+import LeanItsdangerous.Proofs
 import LeanItsdangerous.Proofs.Verified
 
 /-!

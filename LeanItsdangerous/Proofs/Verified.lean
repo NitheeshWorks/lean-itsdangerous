@@ -1,4 +1,4 @@
-import LeanItsdangerous.Proofs.Basic
+import LeanItsdangerous.Proofs.Signer
 
 /-!
 # The harness: one `Verified<Layer>` structure per layer
