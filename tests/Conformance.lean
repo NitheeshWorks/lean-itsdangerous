@@ -1,4 +1,10 @@
 import LeanItsdangerous
+import examples.Signer
+import examples.Timed
+import examples.Serializer
+import examples.UrlSafe
+import examples.Concepts
+import examples.Exceptions
 
 /-!
 # Conformance cases
@@ -502,6 +508,11 @@ def kats : List Kat := [
     expected := "{\"id\": 42}.ZVPxAA.aFESr2OogwT9RtL_Xt98-zUL8QI"
     accepts := (timedPlain.loads (b "{\"id\": 42}.ZVPxAA.aFESr2OogwT9RtL_Xt98-zUL8QI") none 1700000000).map (·.val)
       == .ok ("{\"id\": 42}", 1700000000) },
+  { upstream := "docs/concepts.rst::Key Rotation"
+    name := "Signer([\"old key\", \"new key\"], sep=\"|\") (examples/Quickstart.lean)"
+    produced := (Signer.new ["old key", "new key"] (sep := "|")).sign "v"
+    expected := "v|amXLIt5orme7Jc1l4Y_7Z2osbMY"
+    accepts := (Signer.new "new key" (sep := "|")).validate "v|amXLIt5orme7Jc1l4Y_7Z2osbMY" },
   { upstream := "README.md::A Simple Example"
     name := "README: URLSafeSerializer(\"secret key\", \"auth\")"
     produced := (URLSafeSerializer.new "secret key" "auth" (serializer := jsonText) : URLSafeSerializer String).dumps
@@ -517,10 +528,90 @@ def kats : List Kat := [
       | .ok r => r.val.1 == b starletteData | .error _ => false }
 ]
 
+/-! ## The translated docs (`examples/`)
+
+Every value an example prints, checked against what upstream itsdangerous
+2.2.0 prints for the same docs snippet (`upstream-spec/.venv/bin/python -I`,
+with `get_timestamp` fixed for the timed ones). -/
+
+def docCase (page name : String) (ok : Bool) (detail : String) : Case :=
+  ⟨s!"docs/{page}", s!"docs: {name}", ensure ok detail⟩
+
+def errMsg {α : Type} : Except BadData α → String
+  | .error e => e.message
+  | .ok _ => "accepted"
+
+def docsCases : List Case := [
+  docCase "signer.rst::Signing Interface" "Signer.sign"
+    (Examples.Signer.signed == b "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA") s!"{Examples.Signer.signed}",
+  docCase "signer.rst::Signing Interface" "Signer.unsign"
+    ((Examples.Signer.unsigned).val == .ok (b "my string")) "unsign",
+  docCase "signer.rst::Signing Interface" "Signer.unsign of a changed value"
+    ((match Examples.Signer.tampered with | .error e => e.message | .ok _ => "")
+      == "Signature b'wh6tMHxLgJqB6oY1uT73iMlyrOA' does not match") "message",
+  docCase "signer.rst::Signing Algorithms" "NoneAlgorithm and SHA-256"
+    (Examples.Signer.unsignedSigner.sign "my string" == b "my string." &&
+     Examples.Signer.sha256Signer.sign "my string" == b "my string.PVHY4OzY_ekIpRd3A5G0vzTkhg8wSod5E3p90JgBCKw") "algorithms",
+  docCase "timed.rst::Signing With Timestamps" "TimestampSigner.sign"
+    (Examples.Timed.string == b "foo.ZVPxAA.IsOrIGtLkuP2keI23m0UgRvxgdY") s!"{Examples.Timed.string}",
+  docCase "timed.rst::Signing With Timestamps" "SignatureExpired: Signature age 15 > 5 seconds"
+    (errMsg Examples.Timed.tooOld == "Signature age 15 > 5 seconds" &&
+     (match Examples.Timed.tooOld with | .error e => e.dateSigned == some 1700000000 | .ok _ => false)) "expired",
+  docCase "timed.rst::Signing With Timestamps" "unsign within max_age, return_timestamp"
+    (Examples.Timed.fresh.val == .ok (b "foo", 1700000000)) "fresh",
+  docCase "timed.rst::TimedSerializer" "TimedSerializer.dumps"
+    (Examples.Timed.timedToken == b "[1, 2, 3, 4].ZVPxAA.ntr3GKq8MmJ7zD3OC1BOs7aq6VA") s!"{Examples.Timed.timedToken}",
+  docCase "serializer.rst::Serialization Interface" "Serializer.dumps"
+    (Examples.Serializer.token == b "[1, 2, 3, 4].r7R9RhGgDPvvWl3iNzLuIIfELmo") s!"{Examples.Serializer.token}",
+  docCase "serializer.rst::Serialization Interface" "Serializer.loads"
+    (Examples.Serializer.loaded.val == .ok "[1, 2, 3, 4]") "loads",
+  docCase "serializer.rst::Responding to Failure" "payload of a BadSignature"
+    (Examples.Serializer.decodedPayload == some "{\"id\":5}") "payload",
+  docCase "serializer.rst::Responding to Failure" "loads_unsafe"
+    (Examples.Serializer.unsafeResult == .ok (false, some "{\"id\":5}") &&
+     Examples.Serializer.u.loadsUnsafe "eyJpZCI6NX0.Miy6DmCsMs_TuHx_Rl2OXEaAyKo" == .ok (true, some "{\"id\":5}")) "unsafe",
+  docCase "serializer.rst::Fallback Signers" "SHA-512 signer, SHA-1 fallback"
+    (Examples.Serializer.newToken == b ("[1, 2, 3, 4].yiq3I159517XUuAUCH5_Kl8NJmANC-vT2H6yUors1WSyjcaXLaNni" ++
+      "Z29jI_NwpJ_37CBvnkD3IAV6YCjG1x67A") && Examples.Serializer.oldTokenLoads.val == .ok "[1, 2, 3, 4]")
+    s!"{Examples.Serializer.newToken}",
+  docCase "url_safe.rst::URL Safe Serialization" "URLSafeSerializer dumps/loads"
+    (Examples.UrlSafe.token == b "WzEsMiwzLDRd.wSPHqC0gR7VUqivlSukJ0IeTDgo" &&
+     Examples.UrlSafe.loaded.val == .ok "[1,2,3,4]") s!"{Examples.UrlSafe.token}",
+  docCase "url_safe.rst::URLSafeTimedSerializer" "URLSafeTimedSerializer.dumps"
+    (Examples.UrlSafe.timedToken == b "eyJhIjoxfQ.ZVPxAA.qIAQK7X87cwO6blIj4letDtfsCI") s!"{Examples.UrlSafe.timedToken}",
+  docCase "concepts.rst::The Salt" "salts activate and upgrade"
+    (Examples.Concepts.activate == b "NDI.MHQqszw6Wc81wOBQszCrEE_RlzY" &&
+     Examples.Concepts.upgrade == b "NDI.c0MpsD6gzpilOAeUPra3NShPXsE" &&
+     errMsg Examples.Concepts.crossSalt == "Signature b'MHQqszw6Wc81wOBQszCrEE_RlzY' does not match") "salt",
+  docCase "concepts.rst::Key Rotation" "rotate a key in and the oldest out"
+    (Examples.Concepts.t == b "{\"id\": 42}.vPnMXi_7YWhvSPnrl9Bcf1-2I44" &&
+     Examples.Concepts.stillValid.val == .ok "{\"id\": 42}" &&
+     Examples.Concepts.rotated == b "{\"id\": 42}.jGrDf14fqQmBTQeF9-Fg799Qixw") "rotation",
+  docCase "exceptions.rst::BadSignature" "no separator"
+    ((match Examples.Exceptions.noSeparator with | .error e => e.message | .ok _ => "") == "No b'.' found in value") "nosep",
+  docCase "exceptions.rst::BadTimeSignature" "timestamp missing"
+    ((match Examples.Exceptions.timestampMissing with
+      | .error e => e.isBadTimeSignature && e.message == "timestamp missing" && e.dateSigned == none
+      | .ok _ => false)) "missing",
+  docCase "exceptions.rst::SignatureExpired" "expired carries payload and date"
+    ((match Examples.Exceptions.expired with
+      | .error e => e.isSignatureExpired && e.isBadSignature && e.payload == some (b "value") &&
+          e.dateSigned == some 1700000000
+      | .ok _ => false)) "expired",
+  docCase "exceptions.rst::BadPayload" "BadPayload message"
+    ((match Examples.Exceptions.badPayload with
+      | .error e => e.isBadPayload &&
+          e.message == "Could not load the payload because an exception occurred on unserializing the data."
+      | .ok _ => false)) "payload",
+  docCase "signer.rst::Signer" "ValueError for separator '-'"
+    ((match Examples.Exceptions.badSeparator with | .error m => m == separatorError | .ok _ => false) &&
+     separatorError == "The given separator cannot be used because it may be contained in the signature itself. ASCII letters, digits, and '-_=' must not be used.") "sep"
+]
+
 def cases : List Case :=
   encodingCases ++ signerSuite "TestSigner" (fun s => plainSUT s) ++
   signerSuite "TestTimestampSigner" (fun s => timedSUT s) ++ timedSignerCases ++
-  serializerCases ++ otherSerializerCases ++ kats.map katCase
+  serializerCases ++ otherSerializerCases ++ kats.map katCase ++ docsCases
 
 def main : IO UInt32 := do
   let mut failures := 0

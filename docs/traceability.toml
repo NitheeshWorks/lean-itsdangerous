@@ -414,3 +414,12 @@ status = "implemented"
 realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.TimedSerializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new", "LeanItsdangerous.SecretKeys", "LeanItsdangerous.SignerKwargs"]
 test = ["tests/Conformance.lean"]
 note = "A separator literal is checked at compile time (by decide) where upstream raises ValueError at construction; checkSeparator checks one known only at run time."
+
+[[requirement]]
+id = "examples.docs"
+upstream = "docs/signer.rst"
+title = "the itsdangerous docs pages (signer, timed, serializer, url_safe, concepts, exceptions) translated into examples/, each output checked against upstream 2.2.0"
+status = "tested"
+realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new"]
+test = ["examples/README.md", "tests/Conformance.lean::docsCases"]
+note = "Payloads are JSON text (String codec) because this library has no JSON dependency; time is an explicit argument. Both are documented deviations."

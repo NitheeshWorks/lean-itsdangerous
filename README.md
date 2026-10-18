@@ -25,10 +25,10 @@ data = auth_s.loads(token)
 import LeanItsdangerous
 open LeanItsdangerous
 
-def authS : URLSafeSerializer String := .new "secret key" "auth"
+def authS := URLSafeSerializer.new "secret key" "auth"
 def token := authS.dumps "{\"id\":5,\"name\":\"itsdangerous\"}"
 -- b'eyJpZCI6NSwibmFtZSI6Iml0c2Rhbmdlcm91cyJ9.6YP6T0BaO67XP--9UzTrmurXSmg'
-#eval (authS.loads token).val      -- Except.ok "{\"id\":5,\"name\":\"itsdangerous\"}"
+#eval authS.loads token            -- Except.ok "{\"id\":5,\"name\":\"itsdangerous\"}"
 ```
 
 The token is byte-identical to upstream's. The payload type picks its codec
@@ -40,12 +40,12 @@ is raw, and lean-json provides `Json`.
 ```lean
 def s := Signer.new "secret-key"
 #eval s.sign "my string"                          -- b'my string.wh6tMHxLgJqB6oY1uT73iMlyrOA'
-#eval (s.unsign "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA").val   -- Except.ok b'my string'
+#eval s.unsign "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA"   -- Except.ok b'my string'
 
 -- TimestampSigner("secret-key"): what Starlette's SessionMiddleware uses
 def ts := TimestampSigner.new "secret-key"
 def stamped := ts.sign "foo" 1700000000            -- sign(value) at time now
-#eval (ts.unsign stamped (maxAge := some 5) (now := 1700000010)).val
+#eval ts.unsign stamped (maxAge := 5) (now := 1700000010)
 -- Except.error (BadData.signatureExpired "Signature age 10 > 5 seconds" ...)
 
 -- Signer(["old key", "new key"], sep="|"): verifies with either, signs with the newest
@@ -54,12 +54,15 @@ def rotated := Signer.new ["old key", "new key"] (sep := "|")
 -- URLSafeTimedSerializer(SECRET_KEY, salt="activate") with the real clock
 def main : IO Unit := do
   let now ← getTimestamp                           -- upstream's get_timestamp()
-  let u : URLSafeTimedSerializer String := .new "secret-key" (salt := "activate")
+  let u := URLSafeTimedSerializer.new "secret-key" (salt := "activate")
   let t := u.dumps "{\"user\":42}" now
-  IO.println (repr (u.loads t (maxAge := some 3600) now).val).pretty
+  IO.println (repr (u.loads t (maxAge := 3600) now)).pretty
 ```
 
 `examples/Quickstart.lean` (`lake exe quickstart`) is this page, compiled.
+[`examples/`](examples/README.md) translates the rest of the itsdangerous
+docs (signer, timed, serializer, URL-safe, concepts, exceptions), each checked
+against upstream's output.
 
 Names, argument order and defaults are upstream's: `salt`
 (`"itsdangerous.Signer"` for signers, `"itsdangerous"` for serializers),
@@ -73,7 +76,8 @@ raising `ValueError`; there is no zlib.
 
 `unsign` and `loads` return refinements: an `ok` result carries the proof of
 what it means (`{v // ∃ k ∈ s.secretKeys, s.signWith k v = token}` for
-`Signer.unsign`). `.val` forgets it.
+`Signer.unsign`). It prints and coerces as the plain value; `.val` forgets
+the proof explicitly.
 
 ## What is proved
 

@@ -36,8 +36,10 @@ reverse order. -/
 instance : Codec Bytes := ⟨id, .ok⟩
 
 /-- UTF-8 text as the payload: for JSON (or any text) the caller has already
-rendered. A `Json` codec comes from lean-json. -/
-instance : Codec String where
+rendered. It is the default instance, as `json` is upstream's default
+serializer, so `URLSafeSerializer.new "secret-key"` needs no type ascription.
+A `Json` codec comes from lean-json. -/
+@[default_instance] instance : Codec String where
   dumps := Bytes.ofString
   loads b := match b.toString? with
     | some s => .ok s

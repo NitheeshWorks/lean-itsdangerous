@@ -157,6 +157,11 @@ Each is a `status = "deviation"` or `"excluded"` row in
 * `tests/Props.lean`: seeded property tests, no dependencies, under a second.
 * `tests/Conformance.lean`: cases re-expressed from the upstream suite; each
   names the upstream test (`tests/test_x.py::test_y`).
+* `examples/`: the itsdangerous docs pages translated, one module per page
+  (index in `examples/README.md`), built as the `Examples` library; the
+  `docs:` conformance cases check every value they print against upstream.
+  An example that needs an ascription, a proof term or a workaround the
+  Python snippet does not is an API bug: fix the API, not the example.
 * `tests/pbt/`: a separate Lake package, the one place an external dependency
   (`plausible`) is taken.
 

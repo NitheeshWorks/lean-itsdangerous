@@ -45,6 +45,10 @@ theorem _root_.Except.val_refine {ε α : Type} {p : α → Prop} (r : Except ε
     (h : ∀ x, r = .ok x → p x) : (r.refine h).val = r := by
   cases r <;> rfl
 
+/-- With `open LeanItsdangerous`, `(maxAge := 5)` reads as upstream's
+`max_age=5`. -/
+scoped instance {n : Nat} : OfNat (Option Nat) n := ⟨some n⟩
+
 /-- Upstream's `ValueError` message for a separator that may occur inside a
 signature. -/
 def separatorError : String :=
