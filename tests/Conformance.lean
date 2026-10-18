@@ -3,20 +3,410 @@ import LeanItsdangerous
 /-!
 # Conformance cases
 
-Each case re-expresses one upstream test (https://github.com/pallets/itsdangerous, `tests/`) in Lean and
-names it, so `docs/traceability.toml` can point at both. The upstream suite is
-the behavioural specification; no upstream code is copied.
+Each case re-expresses one upstream test (https://github.com/pallets/itsdangerous,
+`tests/test_itsdangerous/`) in Lean and names it, so `docs/traceability.toml`
+can point at both. The upstream suite is the behavioural specification; no
+upstream code is copied.
+
+Upstream runs its signer suite twice (`TestSigner`, and `TestTimestampSigner`
+inheriting it) and its serializer suite four times (`Serializer`,
+`TimedSerializer`, `URLSafeSerializer`, `URLSafeTimedSerializer`); so do we,
+through the small `SignerUnderTest` / `SerializerUnderTest` records. Upstream
+freezes time with `freezegun`; here `now` is a parameter.
+
+The payload codec stands in for upstream's default `json`: values are given
+as their compact JSON text, `dumps` is UTF-8 encoding and `loads` accepts
+only well-formed JSON (a small recogniser below), so a truncated payload
+raises `BadPayload` exactly as `json.loads` would. The real JSON codec comes
+from lean-json, plugged in by lean-starlette.
 
 Run with `lake exe conformance`.
 -/
 
+open LeanItsdangerous
+
+instance {ε α : Type} [BEq ε] [BEq α] : BEq (Except ε α) where
+  beq
+    | .ok a, .ok b => a == b
+    | .error a, .error b => a == b
+    | _, _ => false
+
 structure Case where
-  /-- Upstream test this mirrors, e.g. `tests/test_path.py::test_int`. -/
+  /-- Upstream test this mirrors, e.g. `tests/test_itsdangerous/test_signer.py::TestSigner::test_signer`. -/
   upstream : String
   name : String
   run : IO Bool
 
-def cases : List Case := []
+def b (s : String) : Bytes := Bytes.ofString s
+
+def ensure (cond : Bool) (msg : String) : IO Bool := do
+  unless cond do IO.println s!"      {msg}"
+  return cond
+
+/-! ## A JSON recogniser for the test codec -/
+
+namespace J
+
+def ws : Bytes → Bytes
+  | c :: cs => if c == 32 || c == 10 || c == 13 || c == 9 then ws cs else c :: cs
+  | [] => []
+
+def isDigit (c : UInt8) : Bool := 48 ≤ c && c ≤ 57
+
+def str : Bytes → Option Bytes
+  | 34 :: cs => some cs
+  | 92 :: _ :: cs => str cs
+  | c :: cs => if c < 32 then none else str cs
+  | [] => none
+
+def num (cs : Bytes) : Option Bytes :=
+  let cs := match cs with | 45 :: r => r | r => r
+  let d := cs.takeWhile isDigit
+  if d.isEmpty then none else
+  let cs := cs.drop d.length
+  let cs := match cs with
+    | 46 :: r => let f := r.takeWhile isDigit; if f.isEmpty then none else some (r.drop f.length)
+    | r => some r
+  cs
+
+def lit (w : String) (cs : Bytes) : Option Bytes :=
+  let w := b w
+  if w.isPrefixOf cs then some (cs.drop w.length) else none
+
+mutual
+def value : Nat → Bytes → Option Bytes
+  | 0, _ => none
+  | n + 1, cs =>
+    match ws cs with
+    | 34 :: r => str r
+    | 91 :: r => match ws r with
+      | 93 :: r' => some r'
+      | _ => elems n r
+    | 123 :: r => match ws r with
+      | 125 :: r' => some r'
+      | _ => members n r
+    | 116 :: _ => lit "true" (ws cs)
+    | 102 :: _ => lit "false" (ws cs)
+    | 110 :: _ => lit "null" (ws cs)
+    | r => num r
+def elems : Nat → Bytes → Option Bytes
+  | 0, _ => none
+  | n + 1, cs => do
+    let r ← value n cs
+    match ws r with
+    | 44 :: r' => elems n r'
+    | 93 :: r' => some r'
+    | _ => none
+def members : Nat → Bytes → Option Bytes
+  | 0, _ => none
+  | n + 1, cs => do
+    let r ← match ws cs with | 34 :: r => str r | _ => none
+    let r ← match ws r with | 58 :: r => some r | _ => none
+    let r ← value n r
+    match ws r with
+    | 44 :: r' => members n r'
+    | 125 :: r' => some r'
+    | _ => none
+end
+
+def valid (bs : Bytes) : Bool :=
+  match value (bs.length + 1) bs with
+  | some rest => (ws rest).isEmpty
+  | none => false
+
+end J
+
+/-- The stand-in for upstream's `json` serializer: JSON text in, JSON text out. -/
+def jsonText : Codec String where
+  dumps s := b s
+  loads bs :=
+    if J.valid bs then
+      match bs.toString? with
+      | some s => .ok s
+      | none => .error "invalid utf-8"
+    else .error "Expecting value"
+
+/-! ## Signer suite (`TestSigner`, `TestTimestampSigner`) -/
+
+/-- Upstream's frozen time, 2011-06-24T00:09:05Z. -/
+def frozen : UInt64 := 1308874145
+
+structure SignerUnderTest where
+  sign : Bytes → Bytes
+  unsign : Bytes → Except BadData Bytes
+  sep : Bytes
+
+def SignerUnderTest.validate (s : SignerUnderTest) (x : Bytes) : Bool :=
+  match s.unsign x with | .ok _ => true | .error _ => false
+
+def plainSUT (s : Signer) : SignerUnderTest where
+  sign := s.sign
+  unsign x := match s.unsign x with
+    | .ok v => .ok v.val
+    | .error e => .error e.toBadData
+  sep := s.sep
+
+def timedSUT (s : Signer) : SignerUnderTest where
+  sign := (TimestampSigner.mk s).sign frozen
+  unsign x := match (TimestampSigner.mk s).unsign x none frozen with
+    | .ok r => .ok r.val.1
+    | .error e => .error e
+  sep := s.sep
+
+/-- Replace the first occurrence of `pat` by `rep` (`bytes.replace(.., 1)`). -/
+def replace1 (pat rep : Bytes) : Bytes → Bytes
+  | [] => []
+  | c :: cs => if pat.isPrefixOf (c :: cs) then rep ++ (c :: cs).drop pat.length
+    else c :: replace1 pat rep cs
+
+def isBadSig : Except BadData Bytes → Bool
+  | .error e => e.isBadSignature
+  | .ok _ => false
+
+/-- `_ReverseAlgorithm` from upstream's test: `(key + value)[::-1]`. -/
+def reverseAlgorithm : SigningAlgorithm := ⟨"reverse", fun k v => (k ++ v).reverse⟩
+
+def signerSuite (cls : String) (mk : Signer → SignerUnderTest) : List Case :=
+  let file := "tests/test_itsdangerous/" ++ (if cls == "TestSigner" then "test_signer.py" else "test_timed.py")
+  let up (t : String) := s!"{file}::{cls}::{t}"
+  let dflt := mk (Signer.ofKey (b "secret-key"))
+  let withCfg (cfg : SignerConfig) := mk (Signer.ofKey (b "secret-key") (cfg := cfg))
+  [ ⟨up "test_signer", s!"{cls}: sign then validate and unsign", do
+      let signed := dflt.sign (b "my string")
+      ensure (dflt.validate signed && dflt.unsign signed == .ok (b "my string")) "round trip failed"⟩,
+    ⟨up "test_no_separator", s!"{cls}: separator replaced", do
+      let signed := replace1 dflt.sep (b "*") (dflt.sign (b "my string"))
+      ensure (!dflt.validate signed && isBadSig (dflt.unsign signed)) "accepted"⟩,
+    ⟨up "test_broken_signature", s!"{cls}: truncated signature, payload kept", do
+      let signed := dflt.sign (b "b")
+      let bad := signed.dropLast
+      match dflt.unsign bad with
+      | .error e => ensure (e.isBadSignature && e.payload == some (b "b")) s!"payload {repr e}"
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_changed_value", s!"{cls}: value changed", do
+      let signed := replace1 (b "my") (b "other") (dflt.sign (b "my string"))
+      ensure (!dflt.validate signed && isBadSig (dflt.unsign signed)) "accepted"⟩,
+    ⟨up "test_invalid_separator", s!"{cls}: separator '-' rejected", do
+      match SignerConfig.new (b "-") with
+      | .error m => ensure ((m.splitOn "separator cannot be used").length > 1) m
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_key_derivation", s!"{cls}: concat, django-concat, hmac, none", do
+      let ok := [KeyDerivation.concat, .djangoConcat, .hmac, .none].all fun kd =>
+        let s := withCfg (SignerConfig.default (keyDerivation := kd))
+        s.unsign (s.sign (b "value")) == .ok (b "value")
+      ensure ok "a key derivation failed"⟩,
+    ⟨up "test_digest_method", s!"{cls}: another digest (SHA-256 for md5)", do
+      let s := withCfg (SignerConfig.default (digest := sha256))
+      ensure (s.unsign (s.sign (b "value")) == .ok (b "value")) "round trip failed"⟩,
+    ⟨up "test_algorithm", s!"{cls}: default, None, HMAC, reverse algorithms", do
+      let ok := [none, some noneAlgorithm, some (hmacAlgorithm sha1), some reverseAlgorithm].all fun a =>
+        let s := withCfg (SignerConfig.default (algorithm := a))
+        s.unsign (s.sign (b "value")) == .ok (b "value")
+      ensure ok "an algorithm failed"⟩,
+    ⟨up "test_secret_keys", s!"{cls}: key rotation", do
+      let s1 := mk (Signer.ofKey (b "a"))
+      let s2 := mk (Signer.ofKeys [b "a", b "b"] (by simp))
+      let signed := s1.sign (b "my string")
+      ensure (s2.validate signed && s2.unsign signed == .ok (b "my string")) "rotation failed"⟩ ]
+
+def tsSigner : TimestampSigner := TimestampSigner.ofKey (b "secret-key")
+
+def timedSignerCases : List Case :=
+  let up (t : String) := s!"tests/test_itsdangerous/test_timed.py::TestTimestampSigner::{t}"
+  [ ⟨up "test_max_age", "TestTimestampSigner: max_age boundary and expiry", do
+      let signed := tsSigner.sign frozen (b "value")
+      let ok1 := match tsSigner.unsign signed (some 10) (frozen + 1) with
+        | .ok r => r.val.1 == b "value" | .error _ => false
+      let ok2 := match tsSigner.unsign signed (some 10) (frozen + 11) with
+        | .error e => e.isSignatureExpired && e.dateSigned == some frozen.toNat | .ok _ => false
+      ensure (ok1 && ok2) "max_age"⟩,
+    ⟨up "test_return_timestamp", "TestTimestampSigner: timestamp returned", do
+      match tsSigner.unsign (tsSigner.sign frozen (b "value")) none frozen with
+      | .ok r => ensure (r.val == (b "value", frozen)) "wrong result"
+      | .error e => ensure false e.message⟩,
+    ⟨up "test_timestamp_missing", "TestTimestampSigner: plain signature has no timestamp", do
+      let signed := (Signer.ofKey (b "secret-key")).sign (b "value")
+      match tsSigner.unsign signed none frozen with
+      | .error e => ensure (e.isBadTimeSignature && (e.message.splitOn "missing").length > 1 &&
+          e.dateSigned == none) e.message
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_malformed_timestamp", "TestTimestampSigner: malformed timestamp", do
+      let signed := (Signer.ofKey (b "secret-key")).sign (b "value.____________")
+      match tsSigner.unsign signed none frozen with
+      | .error e => ensure (e.isBadTimeSignature && (e.message.splitOn "Malformed").length > 1 &&
+          e.dateSigned == none) e.message
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_malformed_future_timestamp", "TestTimestampSigner: timestamp beyond datetime range", do
+      match tsSigner.unsign (b "value.TgPVoaGhoQ.AGBfQ6G6cr07byTRt0zAdPljHOY") none frozen with
+      | .error e => ensure (e.isBadTimeSignature && (e.message.splitOn "Malformed").length > 1 &&
+          e.dateSigned == none) e.message
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_future_age", "TestTimestampSigner: signed in the future", do
+      match tsSigner.unsign (tsSigner.sign frozen (b "value")) (some 10) 44496000 with
+      | .error e => ensure (e.isSignatureExpired && e.dateSigned.isSome) e.message
+      | .ok _ => ensure false "accepted"⟩,
+    ⟨up "test_sig_error_date_signed", "TestTimestampSigner: bad signature still reports the date", do
+      let signed := replace1 (b "my") (b "other") (tsSigner.sign frozen (b "my string"))
+      match tsSigner.unsign signed none frozen with
+      | .error e => ensure (e.isBadTimeSignature && e.dateSigned.isSome) e.message
+      | .ok _ => ensure false "accepted"⟩ ]
+
+/-! ## Serializer suite (`TestSerializer` and its three subclasses) -/
+
+structure SerializerUnderTest where
+  dumps : String → Option Bytes → Bytes
+  loads : Bytes → Option Bytes → Except BadData String
+  loadsUnsafe : Bytes → Except BadData (Bool × Option String)
+  loadPayload : Bytes → Except BadData String
+  /-- `make_signer().sign` -/
+  sign : Bytes → Bytes
+
+def plainSer (s : Serializer String) : SerializerUnderTest where
+  dumps x salt := s.dumps x salt
+  loads x salt := (s.loads x salt).map Subtype.val
+  loadsUnsafe x := s.loadsUnsafe x
+  loadPayload := s.loadPayload
+  sign := (s.makeSigner).sign
+
+def timedSer (s : TimedSerializer String) : SerializerUnderTest where
+  dumps x salt := s.dumps frozen x salt
+  loads x salt := (s.loads x none frozen salt).map (·.val.1)
+  loadsUnsafe x := s.loadsUnsafe x none frozen
+  loadPayload := s.toSerializer.loadPayload
+  sign := (s.makeSigner).sign frozen
+
+def isBadSigS : Except BadData String → Bool
+  | .error e => e.isBadSignature
+  | .ok _ => false
+
+def upper (bs : Bytes) : Bytes := bs.map fun c => if 97 ≤ c && c ≤ 122 then c - 32 else c
+
+/-- Everything up to the last `.`: `s.rsplit(".", 1)[0]`. -/
+def beforeLastDot (bs : Bytes) : Bytes := ((rsplit [46] bs).map (·.1)).getD bs
+
+def serializerSuite (file cls : String) (mk : Option (List SignerConfig) → Option SignerConfig →
+    SerializerUnderTest) (values : List String) : List Case :=
+  let up (t : String) := s!"tests/test_itsdangerous/{file}::{cls}::{t}"
+  let s := mk none none
+  let perValue (t : String) (f : String → IO Bool) : Case :=
+    ⟨up t, s!"{cls}: {t}", do
+      let mut ok := true
+      for v in values do
+        ok := ok && (← f v)
+      return ok⟩
+  [ ⟨up "test_serializer", s!"{cls}: round trip of null, true, strings, list, object", do
+      let vals := ["null", "true", "\"str\"", "\"text\"", "[1,2,3]", "{\"id\":42}"] ++ values
+      ensure (vals.all fun v => s.loads (s.dumps v none) none == .ok v) "round trip failed"⟩,
+    perValue "test_changed_value" fun v => do
+      let signed := s.dumps v none
+      let changed := [upper signed, signed ++ b "a", b "a" ++ signed.drop 1, signed.filter (· != 46)]
+      ensure (s.loads signed none == .ok v && changed.all fun c => isBadSigS (s.loads c none))
+        s!"tampered token accepted for {v}",
+    perValue "test_bad_signature_exception" fun v => do
+      match s.loads (s.dumps v none).dropLast none with
+      | .error e => ensure (e.isBadSignature &&
+          (e.payload.map fun p => s.loadPayload p == .ok v) == some true) "payload not recoverable"
+      | .ok _ => ensure false "accepted",
+    perValue "test_bad_payload_exception" fun v => do
+      let payload := beforeLastDot (s.dumps v none)
+      match s.loads (s.sign payload.dropLast) none with
+      | .error (.badPayload _ (some _)) => pure true
+      | r => ensure false s!"expected BadPayload, got {repr (r.toOption)}",
+    perValue "test_loads_unsafe" fun v => do
+      let signed := s.dumps v none
+      let bad := s.sign (beforeLastDot signed).dropLast |>.dropLast
+      ensure (s.loadsUnsafe signed == .ok (true, some v) &&
+        s.loadsUnsafe signed.dropLast == .ok (false, some v) &&
+        s.loadsUnsafe bad == .ok (false, none)) "loads_unsafe",
+    perValue "test_alt_salt" fun v => do
+      let signed := s.dumps v (some (b "other"))
+      ensure (isBadSigS (s.loads signed none) && s.loads signed (some (b "other")) == .ok v) "salt",
+    perValue "test_signer_cls" fun v => do
+      let other := mk none (some (SignerConfig.default (keyDerivation := .hmac)))
+      ensure (other.loads (other.dumps v none) none == .ok v && other.dumps v none != s.dumps v none)
+        "hmac key derivation",
+    perValue "test_signer_kwargs" fun v => do
+      let other := mk none (some (SignerConfig.default (keyDerivation := .hmac)))
+      ensure (other.loads (other.dumps v none) none == .ok v &&
+        other.dumps "\"value\"" none != s.dumps "\"value\"" none) "signer kwargs",
+    perValue "test_fallback_signers" fun v => do
+      let s256 := mk none (some (SignerConfig.default (digest := sha256)))
+      let fb := mk (some [SignerConfig.default (digest := sha256)]) (some (SignerConfig.default (digest := sha1)))
+      ensure (fb.loads (s256.dumps v none) none == .ok v) "fallback" ]
+
+def serKey : Bytes := b "secret_key"
+
+def mkPlain (codec : Codec String) (key : Bytes) (fbs : Option (List SignerConfig))
+    (cfg : Option SignerConfig) : SerializerUnderTest :=
+  plainSer (Serializer.ofKey key codec (signer := cfg.getD SignerConfig.default) (fallbacks := fbs.getD []))
+
+def mkTimed (codec : Codec String) (key : Bytes) (fbs : Option (List SignerConfig))
+    (cfg : Option SignerConfig) : SerializerUnderTest :=
+  timedSer (TimedSerializer.ofKey key codec (signer := cfg.getD SignerConfig.default) (fallbacks := fbs.getD []))
+
+def thousandA : String := "\"" ++ String.ofList (List.replicate 1000 'a') ++ "\""
+
+def serializerCases : List Case :=
+  serializerSuite "test_serializer.py" "TestSerializer" (mkPlain jsonText serKey) ["{\"id\":42}"] ++
+  serializerSuite "test_timed.py" "TestTimedSerializer" (mkTimed jsonText serKey) ["{\"id\":42}"] ++
+  serializerSuite "test_url_safe.py" "TestURLSafeSerializer" (mkPlain (urlSafeCodec jsonText) (b "secret-key"))
+    ["{\"id\":42}", thousandA] ++
+  serializerSuite "test_url_safe.py" "TestURLSafeTimedSerializer" (mkTimed (urlSafeCodec jsonText) (b "secret-key"))
+    ["{\"id\":42}", thousandA]
+
+def timedSer0 : TimedSerializer String := TimedSerializer.ofKey serKey jsonText
+
+def otherSerializerCases : List Case := [
+  ⟨"tests/test_itsdangerous/test_serializer.py::TestSerializer::test_iter_unsigners",
+   "TestSerializer: unsigner order (main, then each fallback per key)", do
+      let s := Serializer.ofKey serKey jsonText
+        (fallbacks := [SignerConfig.default (digest := sha256), SignerConfig.default (digest := sha256),
+          SignerConfig.default (digest := sha256)])
+      let names := (s.unsigners).map (·.digest.name)
+      ensure (names == ["sha1", "sha256", "sha256", "sha256"]) s!"{names}"⟩,
+  ⟨"tests/test_itsdangerous/test_serializer.py::test_digests", "test_digests: SHA-1 and SHA-512 tokens", do
+      let mk (cfg : SignerConfig) := Serializer.ofKey (b "dev key") jsonText (salt := some (b "dev salt")) (signer := cfg)
+      let dflt := (mk SignerConfig.default).dumps "[42]"
+      let s1 := (mk (SignerConfig.default (digest := sha1))).dumps "[42]"
+      let s512 := (mk (SignerConfig.default (digest := sha512))).dumps "[42]"
+      ensure (dflt == s1 && s1 == b "[42].-9cNi0CxsSB3hZPNCe9a2eEs1ZM" &&
+        s512 == b ("[42].MKCz_0nXQqv7wKpfHZcRtJRmpT2T5uvs9YQsJEhJimqxc" ++
+          "9bCLxG31QzS5uC8OVBI1i6jyOLAFNoKaF5ckO9L5Q")) s!"{s1} {s512}"⟩,
+  ⟨"tests/test_itsdangerous/test_timed.py::TestTimedSerializer::test_max_age",
+   "TestTimedSerializer: max_age expiry keeps date and payload", do
+      let signed := timedSer0.dumps frozen "{\"id\":42}"
+      let ok1 := match timedSer0.loads signed (some 10) (frozen + 1) with
+        | .ok r => r.val.1 == "{\"id\":42}" | .error _ => false
+      let ok2 := match timedSer0.loads signed (some 10) (frozen + 11) with
+        | .error e => e.isSignatureExpired && e.dateSigned == some frozen.toNat &&
+            (e.payload.map fun p => timedSer0.toSerializer.loadPayload p == .ok "{\"id\":42}") == some true
+        | .ok _ => false
+      ensure (ok1 && ok2) "max_age"⟩,
+  ⟨"tests/test_itsdangerous/test_timed.py::TestTimedSerializer::test_return_payload",
+   "TestTimedSerializer: value and timestamp returned", do
+      match timedSer0.loads (timedSer0.dumps frozen "{\"id\":42}") none frozen with
+      | .ok r => ensure (r.val == ("{\"id\":42}", frozen)) "wrong result"
+      | .error e => ensure false e.message⟩
+]
+
+/-! ## Encoding (`test_encoding.py`) -/
+
+def encodingCases : List Case := [
+  ⟨"tests/test_itsdangerous/test_encoding.py::test_want_bytes", "want_bytes of text", do
+      ensure (b "mañana" == [109, 97, 195, 177, 97, 110, 97]) "utf-8"⟩,
+  ⟨"tests/test_itsdangerous/test_encoding.py::test_base64", "base64 round trip of text and bytes", do
+      ensure (["無限", "infinite"].all fun v => base64Decode (b64encode (b v)) == some (b v)) "round trip"⟩,
+  ⟨"tests/test_itsdangerous/test_encoding.py::test_base64_bad", "base64_decode(\"12345\") is invalid", do
+      ensure (base64Decode (b "12345") == none) "accepted"⟩,
+  ⟨"tests/test_itsdangerous/test_encoding.py::test_int_bytes", "int_to_bytes / bytes_to_int", do
+      let cases : List (UInt64 × Bytes) := [(0, []), (192, [0xc0]), (18446744073709551615, List.replicate 8 0xff)]
+      ensure (cases.all fun (n, e) => intToBytes n == e && bytesToInt e == some n) "int bytes"⟩
+]
+
+def cases : List Case :=
+  encodingCases ++ signerSuite "TestSigner" (fun s => plainSUT s) ++
+  signerSuite "TestTimestampSigner" (fun s => timedSUT s) ++ timedSignerCases ++
+  serializerCases ++ otherSerializerCases
 
 def main : IO UInt32 := do
   let mut failures := 0

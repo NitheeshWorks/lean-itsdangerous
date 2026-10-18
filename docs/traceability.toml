@@ -16,11 +16,382 @@ upstream_url = "https://github.com/pallets/itsdangerous"
 upstream_commit = "672971d66a2ef9f85151e53283113f33d642dabd"
 upstream_license = "BSD-3-Clause"
 
-# [[requirement]]
-# id = "..."                  # stable id, e.g. "routing.first-match"
-# upstream = "tests/test_x.py::test_y"   # or a docs section
-# title = "..."
-# status = "implemented"
-# realises = ["LeanItsdangerous.Foo.bar"]
-# theorem = ["LeanItsdangerous.Foo.bar_spec"]
-# test = ["tests/Conformance.lean::name"]
+[[requirement]]
+id = "encoding.base64"
+upstream = "tests/test_itsdangerous/test_encoding.py::test_base64"
+title = "base64url encode without padding; decode inverts encode"
+status = "implemented"
+realises = ["LeanItsdangerous.b64encode", "LeanItsdangerous.b64decode", "LeanItsdangerous.base64Decode"]
+theorem = ["LeanItsdangerous.b64decode_b64encode", "LeanItsdangerous.base64Decode_b64encode", "LeanItsdangerous.length_b64encode", "LeanItsdangerous.b64encode_injective"]
+test = ["tests/Conformance.lean::test_base64", "tests/Props.lean"]
+
+[[requirement]]
+id = "encoding.base64-bad"
+upstream = "tests/test_itsdangerous/test_encoding.py::test_base64_bad"
+title = "invalid base64 (length 1 mod 4) is rejected"
+status = "implemented"
+realises = ["LeanItsdangerous.base64Decode"]
+test = ["tests/Conformance.lean::test_base64_bad"]
+
+[[requirement]]
+id = "encoding.int-bytes"
+upstream = "tests/test_itsdangerous/test_encoding.py::test_int_bytes"
+title = "int_to_bytes / bytes_to_int big-endian, leading zeros stripped, at most 8 bytes"
+status = "implemented"
+realises = ["LeanItsdangerous.intToBytes", "LeanItsdangerous.bytesToInt"]
+theorem = ["LeanItsdangerous.bytesToInt_intToBytes"]
+test = ["tests/Conformance.lean::test_int_bytes"]
+
+[[requirement]]
+id = "encoding.want-bytes"
+upstream = "tests/test_itsdangerous/test_encoding.py::test_want_bytes"
+title = "text is encoded as UTF-8"
+status = "implemented"
+realises = ["LeanItsdangerous.Bytes.ofString"]
+test = ["tests/Conformance.lean::test_want_bytes"]
+
+[[requirement]]
+id = "hash.sha"
+upstream = "FIPS 180-4"
+title = "SHA-1, SHA-256, SHA-512"
+status = "tested"
+realises = ["LeanItsdangerous.sha1", "LeanItsdangerous.sha256", "LeanItsdangerous.sha512"]
+test = ["tests/Props.lean"]
+note = "Trusted, not proved: bit-level hash correctness is out of scope. Checked against FIPS 180-4 vectors; only the fixed output length (Hash.h_len) is proved."
+
+[[requirement]]
+id = "hash.hmac"
+upstream = "RFC 2104, RFC 2202, RFC 4231"
+title = "HMAC over any Hash"
+status = "tested"
+realises = ["LeanItsdangerous.hmac", "LeanItsdangerous.hmacAlgorithm"]
+theorem = ["LeanItsdangerous.length_hmac"]
+test = ["tests/Props.lean", "tests/pbt/Pbt.lean"]
+note = "Trusted, not proved. Checked against RFC 2202 (SHA-1) and RFC 4231 (SHA-256, SHA-512) vectors. Its collision resistance is an explicit hypothesis of the tampering theorems, property-tested on random inputs."
+
+[[requirement]]
+id = "signer.sign-unsign"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_signer"
+title = "unsign(sign(v)) == v"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.sign", "LeanItsdangerous.Signer.unsign", "LeanItsdangerous.Signer.unsignImpl"]
+theorem = ["LeanItsdangerous.Signer.unsign_sign", "LeanItsdangerous.Signer.unsign_sound", "LeanItsdangerous.Signer.unsign_ok_iff"]
+test = ["tests/Conformance.lean::test_signer"]
+
+[[requirement]]
+id = "signer.no-separator"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_no_separator"
+title = "a value without the separator raises BadSignature"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.unsignImpl"]
+theorem = ["LeanItsdangerous.Signer.unsign_sound"]
+test = ["tests/Conformance.lean::test_no_separator"]
+
+[[requirement]]
+id = "signer.broken-signature"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_broken_signature"
+title = "a bad signature raises BadSignature carrying the payload"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.unsignImpl"]
+theorem = ["LeanItsdangerous.Signer.unsign_sound"]
+test = ["tests/Conformance.lean::test_broken_signature"]
+
+[[requirement]]
+id = "signer.tampered"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_changed_value"
+title = "a changed value or signature is rejected"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.unsignImpl"]
+theorem = ["LeanItsdangerous.Signer.unsign_tampered", "LeanItsdangerous.Signer.unsign_tampered_value", "LeanItsdangerous.Signer.unsign_tampered_single", "LeanItsdangerous.Signer.rawSignature_length_hmac"]
+test = ["tests/Conformance.lean::test_changed_value", "tests/Props.lean"]
+note = "Proved under explicit hypotheses on the trusted algorithm: distinct values give distinct raw signatures, and raw signatures have a fixed length (discharged for HMAC)."
+
+[[requirement]]
+id = "signer.invalid-separator"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_invalid_separator"
+title = "a separator that may occur in a signature is rejected"
+status = "deviation"
+realises = ["LeanItsdangerous.SignerConfig.new", "LeanItsdangerous.ValidSep"]
+theorem = ["LeanItsdangerous.Signer.rsplit_signWith"]
+test = ["tests/Conformance.lean::test_invalid_separator"]
+note = "Upstream rejects a separator only when it is a substring of the base64 alphabet; we reject any separator that is empty or contains an alphabet byte. Stricter for multi-byte separators mixing alphabet and other bytes; it is what makes the split provably correct."
+
+[[requirement]]
+id = "signer.key-derivation"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_key_derivation"
+title = "concat, django-concat, hmac, none"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.deriveKey", "LeanItsdangerous.KeyDerivation"]
+theorem = ["LeanItsdangerous.Signer.unsign_sign"]
+test = ["tests/Conformance.lean::test_key_derivation"]
+
+[[requirement]]
+id = "signer.invalid-key-derivation"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_invalid_key_derivation"
+title = "unknown key derivation raises TypeError"
+status = "excluded"
+realises = ["LeanItsdangerous.KeyDerivation"]
+note = "Unrepresentable: key derivation is an inductive type, so there is no unknown value to reject."
+
+[[requirement]]
+id = "signer.digest-method"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_digest_method"
+title = "a different digest method"
+status = "deviation"
+realises = ["LeanItsdangerous.Hash"]
+test = ["tests/Conformance.lean::test_digest_method"]
+note = "MD5 is not implemented; the case uses SHA-256. Available digests: SHA-1 (default), SHA-256, SHA-512, or any user-supplied Hash."
+
+[[requirement]]
+id = "signer.algorithm"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_algorithm"
+title = "default, NoneAlgorithm, HMACAlgorithm, custom algorithm"
+status = "implemented"
+realises = ["LeanItsdangerous.SigningAlgorithm", "LeanItsdangerous.noneAlgorithm", "LeanItsdangerous.hmacAlgorithm"]
+theorem = ["LeanItsdangerous.Signer.unsign_sign"]
+test = ["tests/Conformance.lean::test_algorithm"]
+
+[[requirement]]
+id = "signer.abstract-algorithm"
+upstream = "tests/test_itsdangerous/test_signer.py::test_abstract_algorithm"
+title = "SigningAlgorithm base raises NotImplementedError"
+status = "excluded"
+realises = ["LeanItsdangerous.SigningAlgorithm"]
+note = "No abstract base class: a SigningAlgorithm is a structure that must supply its function."
+
+[[requirement]]
+id = "signer.key-rotation"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_secret_keys"
+title = "verification succeeds if any key in the list signed the value"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.signWith", "LeanItsdangerous.Signer.verifySignature"]
+theorem = ["LeanItsdangerous.Signer.unsign_signWith"]
+test = ["tests/Conformance.lean::test_secret_keys"]
+
+[[requirement]]
+id = "signer.compare"
+upstream = "src/itsdangerous/signer.py::SigningAlgorithm.verify_signature"
+title = "signature comparison"
+status = "deviation"
+realises = ["LeanItsdangerous.Signer.verifySignature"]
+theorem = ["LeanItsdangerous.Signer.verifySignature_iff"]
+note = "Upstream base64-decodes the signature and uses hmac.compare_digest. We compare the canonical base64url encoding with ordinary equality: identical on every signature upstream emits, rejects non-canonical spellings Python's lenient decoder accepts, and is not constant-time (Lean gives no timing guarantees)."
+
+[[requirement]]
+id = "timed.max-age"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_max_age"
+title = "max_age accepted at the boundary, SignatureExpired after, with date_signed"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.TimestampSigner.unsignImpl", "LeanItsdangerous.TimestampSigner.checkAge"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_signWith", "LeanItsdangerous.TimestampSigner.unsign_maxAge_mono", "LeanItsdangerous.TimestampSigner.unsign_none_of_some", "LeanItsdangerous.TimestampSigner.unsign_expired", "LeanItsdangerous.TimestampSigner.checkAge_eq_none_iff"]
+test = ["tests/Conformance.lean::test_max_age"]
+
+[[requirement]]
+id = "timed.return-timestamp"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_return_timestamp"
+title = "unsign returns the signing timestamp"
+status = "deviation"
+realises = ["LeanItsdangerous.TimestampSigner.unsign"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_sign", "LeanItsdangerous.decodeTimestamp_encodeTimestamp"]
+test = ["tests/Conformance.lean::test_return_timestamp"]
+note = "The timestamp is returned as seconds since the epoch (UInt64), not a datetime; `now` is an explicit argument rather than time.time()."
+
+[[requirement]]
+id = "timed.timestamp-missing"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_timestamp_missing"
+title = "BadTimeSignature 'timestamp missing'"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.unsignCore"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsignCore_sound"]
+test = ["tests/Conformance.lean::test_timestamp_missing"]
+
+[[requirement]]
+id = "timed.malformed"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_malformed_timestamp"
+title = "BadTimeSignature 'Malformed timestamp'"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.unsignCore"]
+test = ["tests/Conformance.lean::test_malformed_timestamp", "tests/Conformance.lean::test_malformed_future_timestamp"]
+
+[[requirement]]
+id = "timed.future-age"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_future_age"
+title = "a future timestamp is expired"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.checkAge"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_future"]
+test = ["tests/Conformance.lean::test_future_age"]
+
+[[requirement]]
+id = "timed.sig-error-date"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_sig_error_date_signed"
+title = "a bad signature still reports date_signed"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.unsignCore"]
+test = ["tests/Conformance.lean::test_sig_error_date_signed"]
+
+[[requirement]]
+id = "timed.soundness"
+upstream = "src/itsdangerous/timed.py::TimestampSigner.unsign"
+title = "an accepted timestamped value was signed by a listed key and is within max_age"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.TimestampSigner.SignedBy", "LeanItsdangerous.TimestampSigner.AgeOk"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_sound"]
+test = ["tests/Conformance.lean::test_max_age"]
+
+[[requirement]]
+id = "timed.signer-suite"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner"
+title = "the whole TestSigner suite through TimestampSigner"
+status = "implemented"
+realises = ["LeanItsdangerous.TimestampSigner.sign"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_signWith"]
+test = ["tests/Conformance.lean::signerSuite"]
+
+[[requirement]]
+id = "serializer.round-trip"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_serializer"
+title = "loads(dumps(x)) == x"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.dumps", "LeanItsdangerous.Serializer.loads", "LeanItsdangerous.Serializer.loadsImpl"]
+theorem = ["LeanItsdangerous.Serializer.loads_dumps", "LeanItsdangerous.Serializer.loads_sound", "LeanItsdangerous.Serializer.loads_signWith"]
+test = ["tests/Conformance.lean::test_serializer"]
+
+[[requirement]]
+id = "serializer.codec"
+upstream = "src/itsdangerous/serializer.py::Serializer.default_serializer"
+title = "the payload format (default json)"
+status = "deviation"
+realises = ["LeanItsdangerous.Codec"]
+theorem = ["LeanItsdangerous.Serializer.loads_dumps"]
+test = ["tests/Conformance.lean::jsonText"]
+note = "The codec is a parameter (Codec alpha, a dumps/loads pair); there is no built-in JSON. lean-starlette plugs in lean-json. Round trips are proved for any codec whose loads inverts dumps."
+
+[[requirement]]
+id = "serializer.changed-value"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_changed_value"
+title = "tampered tokens raise BadSignature"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.loadsImpl"]
+theorem = ["LeanItsdangerous.Serializer.loads_sound"]
+test = ["tests/Conformance.lean::test_changed_value"]
+
+[[requirement]]
+id = "serializer.bad-signature"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_bad_signature_exception"
+title = "BadSignature carries a loadable payload"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.loadPayload"]
+test = ["tests/Conformance.lean::test_bad_signature_exception"]
+
+[[requirement]]
+id = "serializer.bad-payload"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_bad_payload_exception"
+title = "an unloadable payload raises BadPayload with original_error"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.loadPayload"]
+theorem = ["LeanItsdangerous.Serializer.loadPayload_ok_iff"]
+test = ["tests/Conformance.lean::test_bad_payload_exception"]
+
+[[requirement]]
+id = "serializer.loads-unsafe"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_loads_unsafe"
+title = "loads_unsafe returns (valid, payload)"
+status = "partial"
+realises = ["LeanItsdangerous.Serializer.loadsUnsafe", "LeanItsdangerous.TimedSerializer.loadsUnsafe"]
+theorem = ["LeanItsdangerous.Serializer.loadsUnsafe_dumps"]
+test = ["tests/Conformance.lean::test_loads_unsafe"]
+note = "The last part of the upstream test subclasses the signer to drop the payload; signer subclassing has no analogue."
+
+[[requirement]]
+id = "serializer.file"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_file"
+title = "dump/load to file objects"
+status = "excluded"
+note = "Pure library: no file objects. Callers write dumps output / read loads input themselves."
+
+[[requirement]]
+id = "serializer.alt-salt"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_alt_salt"
+title = "a different salt does not verify"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.makeSigner"]
+theorem = ["LeanItsdangerous.Serializer.loads_dumps"]
+test = ["tests/Conformance.lean::test_alt_salt"]
+
+[[requirement]]
+id = "serializer.signer-cls"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_signer_cls"
+title = "a signer class with another key derivation"
+status = "implemented"
+realises = ["LeanItsdangerous.SignerConfig.default"]
+test = ["tests/Conformance.lean::test_signer_cls", "tests/Conformance.lean::test_signer_kwargs"]
+note = "Signer classes are configurations: subclassing to change default_key_derivation is passing a SignerConfig."
+
+[[requirement]]
+id = "serializer.serializer-kwargs"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_serializer_kwargs"
+title = "keyword arguments to the json serializer"
+status = "excluded"
+note = "The codec is a closed pair of functions; configure it when building it."
+
+[[requirement]]
+id = "serializer.fallback"
+upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_fallback_signers"
+title = "fallback signers are tried after the main one"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.unsigners"]
+theorem = ["LeanItsdangerous.Serializer.loads_sound"]
+test = ["tests/Conformance.lean::test_fallback_signers", "tests/Conformance.lean::test_iter_unsigners"]
+
+[[requirement]]
+id = "serializer.digests"
+upstream = "tests/test_itsdangerous/test_serializer.py::test_digests"
+title = "exact SHA-1 and SHA-512 tokens"
+status = "implemented"
+realises = ["LeanItsdangerous.Serializer.dumps"]
+test = ["tests/Conformance.lean::test_digests"]
+
+[[requirement]]
+id = "timed-serializer.max-age"
+upstream = "tests/test_itsdangerous/test_timed.py::TestTimedSerializer::test_max_age"
+title = "timed loads honours max_age and stops at SignatureExpired"
+status = "implemented"
+realises = ["LeanItsdangerous.TimedSerializer.loads", "LeanItsdangerous.TimedSerializer.loadsImpl"]
+theorem = ["LeanItsdangerous.TimedSerializer.loads_dumps", "LeanItsdangerous.TimedSerializer.loads_sound", "LeanItsdangerous.TimedSerializer.loads_signWith"]
+test = ["tests/Conformance.lean::test_max_age", "tests/Conformance.lean::test_return_payload"]
+
+[[requirement]]
+id = "url-safe.serializer"
+upstream = "tests/test_itsdangerous/test_url_safe.py::TestURLSafeSerializer"
+title = "URL-safe serializers base64url the payload"
+status = "implemented"
+realises = ["LeanItsdangerous.urlSafeCodec", "LeanItsdangerous.URLSafeSerializer.ofKey", "LeanItsdangerous.URLSafeTimedSerializer.ofKey"]
+theorem = ["LeanItsdangerous.urlSafeCodec_roundTrip"]
+test = ["tests/Conformance.lean::serializerSuite"]
+
+[[requirement]]
+id = "url-safe.zlib"
+upstream = "tests/test_itsdangerous/test_url_safe.py::TestURLSafeSerializer::test_serializer[zlib]"
+title = "zlib compression of long payloads"
+status = "deviation"
+realises = ["LeanItsdangerous.urlSafeCodec"]
+test = ["tests/Conformance.lean::serializerSuite"]
+note = "zlib is out of scope: dumps never compresses, loads rejects a '.'-prefixed (compressed) payload with BadPayload. Tokens for compressible payloads differ from upstream; everything we emit, upstream loads."
+
+[[requirement]]
+id = "exc.hierarchy"
+upstream = "src/itsdangerous/exc.py"
+title = "BadData, BadSignature, BadTimeSignature, SignatureExpired, BadHeader, BadPayload"
+status = "implemented"
+realises = ["LeanItsdangerous.BadData", "LeanItsdangerous.BadSignature", "LeanItsdangerous.BadData.isBadSignature", "LeanItsdangerous.BadData.isBadTimeSignature", "LeanItsdangerous.BadData.isSignatureExpired"]
+test = ["tests/Conformance.lean"]
+
+[[requirement]]
+id = "api.refinements"
+upstream = "docs"
+title = "unsign/loads return refinements"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.unsign", "LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.Serializer.loads", "LeanItsdangerous.TimedSerializer.loads"]
+theorem = ["LeanItsdangerous.Signer.unsign_map_val", "LeanItsdangerous.TimestampSigner.unsign_map_val", "LeanItsdangerous.Serializer.loads_map_val", "LeanItsdangerous.TimedSerializer.loads_map_val"]
+test = ["tests/Conformance.lean"]

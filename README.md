@@ -31,10 +31,38 @@ scripts/check.sh      # the whole CI gate, locally
 
 Toolchain: `leanprover/lean4:v4.35.0` (pinned in `lean-toolchain`; `elan` installs it).
 
+## Usage
+
+```lean
+import LeanItsdangerous
+open LeanItsdangerous
+
+-- Starlette's SessionMiddleware: TimestampSigner(secret_key)
+def signer := TimestampSigner.ofKey (Bytes.ofString "secret-key")
+
+def token := signer.sign 1308874145 (Bytes.ofString "payload")   -- now = 1308874145
+
+-- unsign returns a refinement: on success, a proof that a listed key signed it
+#eval match signer.unsign token (maxAge := some 3600) (now := 1308874200) with
+  | .ok r => s!"ok {r.val.1}"
+  | .error e => e.message
+```
+
+Public API (`LeanItsdangerous.APIs`): `Signer.ofKey`/`ofKeys`/`ofConfig`,
+`Signer.sign`/`unsign`/`validate`; `TimestampSigner.ofKey`/`sign`/`unsign`;
+`Serializer.ofKey`/`new`/`dumps`/`loads`/`loadsUnsafe`; `TimedSerializer`,
+`URLSafeSerializer.ofKey`, `URLSafeTimedSerializer.ofKey`; `SignerConfig.default`
+/ `SignerConfig.new` (separator, key derivation, digest, algorithm); the
+`BadData` hierarchy; `sha1`, `sha256`, `sha512`, `hmac`; `b64encode`,
+`base64Decode`. A serializer takes a `Codec α` (a `dumps`/`loads` pair):
+bring your own JSON (lean-json).
+
 ## Status
 
-Milestone 0: skeleton, CI gate, cross-repo pins. See the stack plan in
-lean-fastapi for the milestones that fill this in.
+Signer, TimestampSigner, Serializer, TimedSerializer and the URL-safe
+serializers, with key rotation and fallback signers. What is proved, what is
+tested, and the deviations from upstream (no zlib, explicit time, stricter
+separator check) are listed in [CONTRIBUTING.md](CONTRIBUTING.md#verification).
 
 ## License
 
