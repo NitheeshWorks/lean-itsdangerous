@@ -1,4 +1,5 @@
 import LeanItsdangerous.DataTypes.Bytes
+import LeanItsdangerous.DataTypes.DateTime
 import LeanItsdangerous.DataTypes.Alphabet
 import LeanItsdangerous.DataTypes.Errors
 import LeanItsdangerous.DataTypes.Hash

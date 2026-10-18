@@ -1,0 +1,28 @@
+name = "ItsdangerousJsonExamples"
+defaultTargets = ["JsonExamples", "check", "quickstart"]
+
+# The serializer examples with real JSON values. A separate package, like
+# tests/pbt, so the core library keeps no dependencies: it is the one place
+# lean-itsdangerous meets lean-json.
+[[require]]
+name = "LeanItsdangerous"
+path = "../.."
+
+[[require]]
+name = "LeanJson"
+git = "https://github.com/NitheeshWorks/lean-json"
+rev = "main"
+
+[[lean_lib]]
+name = "JsonExamples"
+roots = ["ItsdangerousJson", "Quickstart", "Serializer", "UrlSafe", "Concepts"]
+
+# Checks every value the examples print against itsdangerous 2.2.0.
+[[lean_exe]]
+name = "check"
+root = "Check"
+
+# The README example as a program.
+[[lean_exe]]
+name = "quickstart"
+root = "QuickstartMain"

@@ -1,34 +1,53 @@
-# Examples: the itsdangerous docs, translated
+# Examples: itsdangerous's own, ported
 
-Each file translates one page of the itsdangerous documentation
-(`docs/*.rst` in [pallets/itsdangerous](https://github.com/pallets/itsdangerous),
-version 2.2.0), and names the page it translates. Read them in this order.
+itsdangerous ships no example programs, so its examples are the Python code
+blocks of its README and docs pages (version 2.2.0). Each is ported 1:1, one
+Lean file per page, in the order of upstream's docs; each file's first comment
+names the page, and each block appears with its Python above its Lean.
+[`MANIFEST.toml`](MANIFEST.toml) maps every upstream block to its port
+(`stack-tools/check-examples.py` checks it).
 
-| # | File | Upstream page | Covers |
+| # | Upstream | Lean | Blocks |
 |---|---|---|---|
-| 1 | [`Quickstart.lean`](Quickstart.lean) | `README.md` "A Simple Example", `docs/index.rst` | `URLSafeSerializer` dumps/loads, `Signer`, `TimestampSigner`, rotation; a `main` with the real clock (`lake exe quickstart`) |
-| 2 | [`Signer.lean`](Signer.lean) | `docs/signer.rst` "Signing Interface" | `Signer.sign`/`unsign`, a changed value, UTF-8 text, `NoneAlgorithm`, other digests |
-| 3 | [`Timed.lean`](Timed.lean) | `docs/timed.rst` "Signing With Timestamps" | `TimestampSigner`, `max_age`, `SignatureExpired`, `return_timestamp`, `TimedSerializer` |
-| 4 | [`Serializer.lean`](Serializer.lean) | `docs/serializer.rst` "Serialization Interface", "Responding to Failure", "Fallback Signers" | `Serializer.dumps`/`loads`, the payload of a `BadSignature`, `loadPayload`, `loadsUnsafe`, `fallbackSigners` |
-| 5 | [`UrlSafe.lean`](UrlSafe.lean) | `docs/url_safe.rst` "URL Safe Serialization" | `URLSafeSerializer`, `URLSafeTimedSerializer` |
-| 6 | [`Concepts.lean`](Concepts.lean) | `docs/concepts.rst` "The Salt", "Key Rotation" | salts separate contexts; rotating keys in and out |
-| 7 | [`Exceptions.lean`](Exceptions.lean) | `docs/exceptions.rst` "Exceptions" | `BadSignature`, `BadTimeSignature`, `SignatureExpired`, `BadPayload`, the separator `ValueError` |
+| 1 | `README.md` "A Simple Example" | [`json/Quickstart.lean`](json/Quickstart.lean) | 1 |
+| 2 | `docs/concepts.rst` (secret key, salt, key rotation) | [`json/Concepts.lean`](json/Concepts.lean) | 5 |
+| 3 | `docs/serializer.rst` (dumps/loads, responding to failure, fallback signers) | [`json/Serializer.lean`](json/Serializer.lean) | 5 |
+| 4 | `docs/signer.rst` "Signing Interface" | [`Signer.lean`](Signer.lean) | 3 |
+| 5 | `docs/timed.rst` "Signing With Timestamps" | [`Timed.lean`](Timed.lean) | 2 |
+| 6 | `docs/url_safe.rst` "URL Safe Serialization" | [`json/UrlSafe.lean`](json/UrlSafe.lean) | 1 |
+| 7 | `docs/encoding.rst` "Encoding Utilities" (autodoc page) | [`Encoding.lean`](Encoding.lean) | – |
+| 8 | `docs/exceptions.rst` "Exceptions" (autodoc page) | [`Exceptions.lean`](Exceptions.lean) | – |
 
-Every example is built by CI (`lake build Examples`, and `lake exe quickstart`).
-Every token and value an example prints is checked byte for byte against
-upstream itsdangerous 2.2.0's output for the same snippet, by the `docs:`
-cases in `tests/Conformance.lean`.
+The two autodoc pages have no code block upstream; their files exercise
+exactly the functions and attributes those pages document.
 
-Two differences from the Python snippets, both documented deviations
-(CONTRIBUTING.md):
+## Two packages
 
-* **Payloads.** Upstream's default serializer is Python's `json`, so
-  `s.dumps([1, 2, 3, 4])` takes a Python list. This library has no JSON of its
-  own; its default payload type is `String`, and the examples pass the JSON
-  text `json.dumps` would write (`"[1, 2, 3, 4]"`, compact `"[1,2,3,4]"` for
-  the URL-safe serializers), which is why the tokens match. lean-json's `Json`
-  plugs in as another `Codec` (lean-starlette does this).
-* **Time.** Upstream reads the clock inside `sign` and `unsign`; here `now`
-  is the last argument. The examples fix it so their output is reproducible;
-  `getTimestamp` reads the real clock (see `main` in `Quickstart.lean` and
-  `Timed.lean`).
+* `examples/*.lean` (the `Examples` library of this package) need nothing but
+  the library.
+* `examples/json/` is a separate Lake package, like `tests/pbt`, that also
+  requires [lean-json](https://github.com/NitheeshWorks/lean-json), so the
+  serializer examples pass real values, as upstream does:
+  `s.dumps (json% [1, 2, 3, 4])`. Its helper `ItsdangerousJson.lean` gives
+  `Json` the two payload codecs upstream's serializers use (`json.dumps` for
+  `Serializer`, `_CompactJSON` for the URL-safe ones) and makes them the
+  default, so no example names a type. The core library stays dependency-free.
+
+```
+lake build Examples                              # the core examples
+cd examples/json && lake build && lake exe check # the JSON examples, checked
+lake exe quickstart                              # README.md's example as a program
+```
+
+## Checked against upstream
+
+Every token, value and message an example prints is compared byte for byte
+with what itsdangerous 2.2.0 prints for the same block (generated with
+`upstream-spec/.venv/bin/python -I`): the `docs:` cases of
+`tests/Conformance.lean` for the core examples, `lake exe check` for the JSON
+ones. Both run in CI.
+
+One difference from the Python blocks remains, a documented deviation:
+**time is an argument.** Upstream reads the clock inside `sign` and
+`unsign`; here `now` is the last argument, fixed in the examples so their
+output is reproducible (`getTimestamp` reads the real clock).

@@ -97,7 +97,7 @@ def MaxAgeExpired : Prop :=
   ∀ (t : TimestampSigner) (k : Bytes), k ∈ t.toSigner.secretKeys →
     ∀ (m : Nat) (now ts : UInt64), ts.toNat + m < now.toNat → ∀ v,
     ∃ msg, (t.unsign (t.signWith k v ts) (some m) now).val =
-      .error (.signatureExpired msg (some v) (some ts.toNat))
+      .error (.signatureExpired msg (some v) (some ⟨ts.toNat⟩))
 
 /-! ## Serializers -/
 

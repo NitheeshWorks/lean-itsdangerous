@@ -2,3 +2,4 @@
 /tests/pbt/.lake
 __pycache__/
 *.pyc
+/examples/json/.lake

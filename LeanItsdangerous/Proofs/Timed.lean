@@ -134,7 +134,7 @@ value and the signing time. -/
 theorem unsignImpl_expired (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {m : Nat} {now ts : UInt64} (hold : ts.toNat + m < now.toNat) (v : Bytes) :
     ∃ msg, t.unsignImpl (some m) now (t.signWith k v ts) =
-      .error (.signatureExpired msg (some v) (some ts.toNat)) := by
+      .error (.signatureExpired msg (some v) (some ⟨ts.toNat⟩)) := by
   unfold unsignImpl
   rw [t.unsignCore_signWith hk]
   have h1 : (now.toNat : Int) - ts.toNat > m := by omega
@@ -145,7 +145,7 @@ checked. -/
 theorem unsignImpl_future (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {m : Nat} {now ts : UInt64} (hfut : now.toNat < ts.toNat) (v : Bytes) :
     ∃ msg, t.unsignImpl (some m) now (t.signWith k v ts) =
-      .error (.signatureExpired msg (some v) (some ts.toNat)) := by
+      .error (.signatureExpired msg (some v) (some ⟨ts.toNat⟩)) := by
   unfold unsignImpl
   rw [t.unsignCore_signWith hk]
   have h1 : ¬ ((now.toNat : Int) - ts.toNat > m) := by omega

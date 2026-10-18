@@ -33,6 +33,10 @@ def Bytes.ofString (s : String) : Bytes := s.toList.flatMap utf8Char
 /-- UTF-8 decoding, failing on invalid UTF-8. -/
 def Bytes.toString? (b : Bytes) : Option String := String.fromUTF8? ⟨b.toArray⟩
 
+/-- Python's `bytes.decode()`: the UTF-8 text (invalid UTF-8 gives `""`;
+tokens are ASCII). -/
+def Bytes.decode (b : Bytes) : String := b.toString?.getD ""
+
 private def hexDigit (n : Nat) : Char :=
   if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
 

@@ -89,7 +89,7 @@ value and the signing time. -/
 theorem unsign_expired (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {m : Nat} {now ts : UInt64} (hold : ts.toNat + m < now.toNat) (v : Bytes) :
     ∃ msg, (t.unsign (t.signWith k v ts) (some m) now).val =
-      .error (.signatureExpired msg (some v) (some ts.toNat)) := by
+      .error (.signatureExpired msg (some v) (some ⟨ts.toNat⟩)) := by
   rw [unsign_val]; exact t.unsignImpl_expired hk hold v
 
 end TimestampSigner

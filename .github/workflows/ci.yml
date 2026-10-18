@@ -23,10 +23,8 @@ jobs:
         with: { test: false, lint: false }
       - name: Verification gate (axioms, sorry/admit, partial, unsafe, implemented_by, extern)
         run: lake env lean --run scripts/Axioms.lean LeanItsdangerous
-      - name: Examples (the itsdangerous docs, translated)
-        run: |
-          lake build Examples
-          lake exe quickstart
+      - name: Examples (ports of the itsdangerous docs that need no JSON)
+        run: lake build Examples
       - name: Property tests
         run: lake exe props
       - name: Conformance
@@ -46,3 +44,19 @@ jobs:
         run: |
           lake build
           ./.lake/build/bin/pbt
+
+  # The serializer examples with real JSON values: a separate package that
+  # requires lean-json, so the core library keeps no dependencies.
+  json-examples:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+        with: { test: false, lint: false }
+      - name: Build the JSON examples and check them against itsdangerous 2.2.0
+        working-directory: examples/json
+        run: |
+          lake build
+          lake exe check
+          lake exe quickstart

@@ -1,0 +1,146 @@
+# Every upstream example and its Lean port (checked by
+# stack-tools/check-examples.py). itsdangerous ships no example programs, so
+# its examples are the Python code blocks of its docs pages and README, one
+# Lean file per page. encoding.rst and exceptions.rst are autodoc pages with no
+# code block; their files exercise exactly the members those pages document.
+
+[meta]
+upstream = "itsdangerous"
+doc_pages = ["README.md", "docs/signer.rst", "docs/timed.rst", "docs/serializer.rst",
+  "docs/url_safe.rst", "docs/concepts.rst"]
+# Not ports: the Codec Json instance, the output check, and the quickstart's
+# program entry point.
+helpers = ["examples/json/ItsdangerousJson.lean", "examples/json/Check.lean",
+  "examples/json/QuickstartMain.lean"]
+
+[[example]]
+upstream = "README.md#block-1"
+lean = "examples/json/Quickstart.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::README.md"
+
+[[example]]
+upstream = "docs/signer.rst#block-1"
+lean = "examples/Signer.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/signer.rst#block-1"
+
+[[example]]
+upstream = "docs/signer.rst#block-2"
+lean = "examples/Signer.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/signer.rst#block-2"
+
+[[example]]
+upstream = "docs/signer.rst#block-3"
+lean = "examples/Signer.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/signer.rst#block-3"
+
+[[example]]
+upstream = "docs/timed.rst#block-1"
+lean = "examples/Timed.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/timed.rst#block-1"
+
+[[example]]
+upstream = "docs/timed.rst#block-2"
+lean = "examples/Timed.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/timed.rst#block-2"
+
+[[example]]
+upstream = "docs/serializer.rst#block-1"
+lean = "examples/json/Serializer.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/serializer.rst block 1"
+
+[[example]]
+upstream = "docs/serializer.rst#block-2"
+lean = "examples/json/Serializer.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/serializer.rst block 2"
+
+[[example]]
+upstream = "docs/serializer.rst#block-3"
+lean = "examples/json/Serializer.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/serializer.rst block 3"
+
+[[example]]
+upstream = "docs/serializer.rst#block-4"
+lean = "examples/json/Serializer.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/serializer.rst block 4"
+
+[[example]]
+upstream = "docs/serializer.rst#block-5"
+lean = "examples/json/Serializer.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/serializer.rst block 5"
+
+[[example]]
+upstream = "docs/url_safe.rst#block-1"
+lean = "examples/json/UrlSafe.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/url_safe.rst block 1"
+
+[[example]]
+upstream = "docs/concepts.rst#block-1"
+lean = "examples/json/Concepts.lean"
+status = "ported"
+reason = ""
+
+[[example]]
+upstream = "docs/concepts.rst#block-2"
+lean = "examples/json/Concepts.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/concepts.rst block 2"
+
+[[example]]
+upstream = "docs/concepts.rst#block-3"
+lean = "examples/json/Concepts.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/concepts.rst block 3"
+
+[[example]]
+upstream = "docs/concepts.rst#block-4"
+lean = "examples/json/Concepts.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/concepts.rst block 4"
+
+[[example]]
+upstream = "docs/concepts.rst#block-5"
+lean = "examples/json/Concepts.lean"
+status = "ported"
+reason = ""
+output = "examples/json/Check.lean::docs/concepts.rst block 5"
+
+[[example]]
+upstream = "docs/encoding.rst"
+lean = "examples/Encoding.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/encoding.rst"
+
+[[example]]
+upstream = "docs/exceptions.rst"
+lean = "examples/Exceptions.lean"
+status = "ported"
+reason = ""
+output = "tests/Conformance.lean::docs/exceptions.rst"

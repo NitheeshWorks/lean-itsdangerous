@@ -137,13 +137,19 @@ Each is a `status = "deviation"` or `"excluded"` row in
   a promise about the machine code.
 * **No zlib.** URL-safe `dumps` never compresses; `loads` rejects a
   compressed (`.`-prefixed) payload with `BadPayload`.
-* **No built-in JSON.** The payload codec is a class (`Codec α`), found by
-  type as upstream finds `json` by default; `String` (UTF-8 text) and
-  `Bytes` instances are built in, and lean-json provides `Json`.
+* **JSON lives outside the core library.** The payload codec is a class
+  (`Codec α`, and `CompactCodec α` for the URL-safe serializers, as upstream
+  uses `_CompactJSON` there), found by type as upstream finds `json` by
+  default. `String` and `Bytes` are built in; lean-json's `Json` plugs in
+  without the core depending on it (`examples/json/ItsdangerousJson.lean`
+  does it with tokens byte-identical to upstream; lean-starlette does the
+  same).
 * **Time is explicit** (`now : UInt64`, seconds since the epoch, the last
   argument of `sign`/`dumps`/`unsign`/`loads`); `getTimestamp` reads the
-  clock, as upstream's `get_timestamp`. Timestamps are returned as seconds,
-  not `datetime`. `max_age` is a `Nat`.
+  clock, as upstream's `get_timestamp`. `date_signed` is a `DateTime` that
+  prints as Python's `datetime`, but `unsign`'s returned timestamp
+  (`return_timestamp=True`) is the `UInt64` seconds the proofs are about.
+  `max_age` is a `Nat`.
 * **base64 decoding** rejects bytes outside the alphabet, where Python's
   non-validating decoder skips them; trailing `=` is accepted as upstream.
 * **MD5 is not provided** (SHA-1, SHA-256, SHA-512, or any `Hash`).
@@ -157,11 +163,15 @@ Each is a `status = "deviation"` or `"excluded"` row in
 * `tests/Props.lean`: seeded property tests, no dependencies, under a second.
 * `tests/Conformance.lean`: cases re-expressed from the upstream suite; each
   names the upstream test (`tests/test_x.py::test_y`).
-* `examples/`: the itsdangerous docs pages translated, one module per page
-  (index in `examples/README.md`), built as the `Examples` library; the
-  `docs:` conformance cases check every value they print against upstream.
-  An example that needs an ascription, a proof term or a workaround the
-  Python snippet does not is an API bug: fix the API, not the example.
+* `examples/`: a 1:1 port of every Python code block in the itsdangerous
+  README and docs, one Lean file per page, mapped in `examples/MANIFEST.toml`
+  (`stack-tools/check-examples.py` checks it; no invented examples). The core
+  ones are the `Examples` library; the serializer ones, with real JSON values,
+  are the separate package `examples/json` (requires lean-json). Every
+  printed value is checked against upstream: `docs:` conformance cases and
+  `examples/json`'s `lake exe check`. An example that needs an ascription, a
+  proof term or a workaround the Python block does not is an API bug: fix
+  the API, not the example.
 * `tests/pbt/`: a separate Lake package, the one place an external dependency
   (`plausible`) is taken.
 

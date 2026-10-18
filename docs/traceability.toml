@@ -47,7 +47,7 @@ id = "encoding.want-bytes"
 upstream = "tests/test_itsdangerous/test_encoding.py::test_want_bytes"
 title = "text is encoded as UTF-8"
 status = "implemented"
-realises = ["LeanItsdangerous.Bytes.ofString", "LeanItsdangerous.SecretKeys"]
+realises = ["LeanItsdangerous.Bytes.ofString", "LeanItsdangerous.IntoKeys"]
 theorem = ["LeanItsdangerous.Bytes.ofString_eq_toUTF8"]
 test = ["tests/Conformance.lean::test_want_bytes"]
 
@@ -262,11 +262,11 @@ test = ["tests/Conformance.lean::test_serializer"]
 id = "serializer.codec"
 upstream = "src/itsdangerous/serializer.py::Serializer.default_serializer"
 title = "the payload format (default json)"
-status = "deviation"
-realises = ["LeanItsdangerous.Codec", "LeanItsdangerous.Codec.Lawful"]
+status = "implemented"
+realises = ["LeanItsdangerous.Codec", "LeanItsdangerous.CompactCodec", "LeanItsdangerous.Codec.Lawful"]
 theorem = ["LeanItsdangerous.Serializer.loads_dumps"]
 test = ["tests/Conformance.lean::jsonText"]
-note = "The payload codec is a class (Codec alpha, a dumps/loads pair) found by type, as upstream finds json by default; there is no built-in JSON. lean-starlette plugs in lean-json. Round trips are proved for any lawful codec (Codec.Lawful)."
+note = "The payload codec is a class (Codec alpha; CompactCodec for the URL-safe serializers, as upstream uses _CompactJSON there) found by type, as upstream finds json by default. lean-json's Json is a codec: examples/json/ItsdangerousJson.lean gives it json.dumps and _CompactJSON, with tokens byte-identical to upstream; lean-starlette does the same. The core library itself has no dependency. Round trips are proved for any lawful codec (Codec.Lawful)."
 
 [[requirement]]
 id = "serializer.changed-value"
@@ -411,15 +411,24 @@ id = "api.upstream-shape"
 upstream = "docs/index.rst"
 title = "constructors named and defaulted as upstream: Signer, TimestampSigner, Serializer, TimedSerializer, URLSafeSerializer, URLSafeTimedSerializer; str or bytes keys and values; a list of keys for rotation"
 status = "implemented"
-realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.TimedSerializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new", "LeanItsdangerous.SecretKeys", "LeanItsdangerous.SignerKwargs"]
+realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.TimedSerializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new", "LeanItsdangerous.IntoKeys", "LeanItsdangerous.SignerKwargs"]
 test = ["tests/Conformance.lean"]
 note = "A separator literal is checked at compile time (by decide) where upstream raises ValueError at construction; checkSeparator checks one known only at run time."
 
 [[requirement]]
 id = "examples.docs"
-upstream = "docs/signer.rst"
-title = "the itsdangerous docs pages (signer, timed, serializer, url_safe, concepts, exceptions) translated into examples/, each output checked against upstream 2.2.0"
+upstream = "README.md"
+title = "every Python code block of the itsdangerous README and docs ported 1:1 into examples/ (MANIFEST.toml), each output checked against upstream 2.2.0"
 status = "tested"
 realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new"]
-test = ["examples/README.md", "tests/Conformance.lean::docsCases"]
-note = "Payloads are JSON text (String codec) because this library has no JSON dependency; time is an explicit argument. Both are documented deviations."
+test = ["examples/MANIFEST.toml", "examples/json/Check.lean", "tests/Conformance.lean::docsCases"]
+note = "Serializer blocks pass real JSON values through lean-json in the separate package examples/json; time is an explicit argument (documented deviation)."
+
+[[requirement]]
+id = "exc.date-signed"
+upstream = "src/itsdangerous/exc.py::BadTimeSignature.date_signed"
+title = "date_signed is a UTC datetime, rendered as Python renders one"
+status = "implemented"
+realises = ["LeanItsdangerous.DateTime", "LeanItsdangerous.DateTime.isoformat", "LeanItsdangerous.BadData.dateSigned"]
+test = ["tests/Conformance.lean::dateTimeCases"]
+note = "str gives 2023-11-14 22:13:20+00:00 and repr gives datetime.datetime(...), checked against Python's datetime across leap days and centuries. Errors print as upstream's traceback line (BadData.className)."

@@ -11,29 +11,40 @@ depends on: none (Lean core only).
 
 ## A simple example
 
-itsdangerous's own example, translated:
+itsdangerous's own example, ported ([`examples/json/Quickstart.lean`](examples/json/Quickstart.lean),
+`lake exe quickstart` in `examples/json`):
 
 ```python
 from itsdangerous import URLSafeSerializer
 auth_s = URLSafeSerializer("secret key", "auth")
 token = auth_s.dumps({"id": 5, "name": "itsdangerous"})
+
+print(token)
 # eyJpZCI6NSwibmFtZSI6Iml0c2Rhbmdlcm91cyJ9.6YP6T0BaO67XP--9UzTrmurXSmg
+
 data = auth_s.loads(token)
+print(data["name"])
+# itsdangerous
 ```
 
 ```lean
-import LeanItsdangerous
-open LeanItsdangerous
+import ItsdangerousJson        -- lean-json's Json as the payload (examples/json)
+open LeanItsdangerous LeanJson
 
 def authS := URLSafeSerializer.new "secret key" "auth"
-def token := authS.dumps "{\"id\":5,\"name\":\"itsdangerous\"}"
--- b'eyJpZCI6NSwibmFtZSI6Iml0c2Rhbmdlcm91cyJ9.6YP6T0BaO67XP--9UzTrmurXSmg'
-#eval authS.loads token            -- Except.ok "{\"id\":5,\"name\":\"itsdangerous\"}"
+def token := authS.dumps (json% {"id": 5, "name": "itsdangerous"})
+
+def main : IO Unit := do
+  IO.println token.decode       -- eyJpZCI6NSwibmFtZSI6Iml0c2Rhbmdlcm91cyJ9.6YP6T0BaO67XP--9UzTrmurXSmg
+  match authS.loads token with
+  | .ok data => IO.println ((data.val.getObjVal? "name" >>= Json.getStr?).getD "")   -- itsdangerous
+  | .error e => IO.println e
 ```
 
-The token is byte-identical to upstream's. The payload type picks its codec
-(`[Codec α]`): `String` is UTF-8 text such as JSON you have rendered, `Bytes`
-is raw, and lean-json provides `Json`.
+The token is byte-identical to upstream's. The payload type picks its codec:
+`Json` (lean-json, wired up in `examples/json/ItsdangerousJson.lean` and by
+lean-starlette), `String` for text, `Bytes` for raw bytes. The core library
+itself depends on nothing.
 
 ## Signing, timestamps, rotation
 
@@ -46,33 +57,31 @@ def s := Signer.new "secret-key"
 def ts := TimestampSigner.new "secret-key"
 def stamped := ts.sign "foo" 1700000000            -- sign(value) at time now
 #eval ts.unsign stamped (maxAge := 5) (now := 1700000010)
--- Except.error (BadData.signatureExpired "Signature age 10 > 5 seconds" ...)
+-- Except.error SignatureExpired: Signature age 10 > 5 seconds
 
 -- Signer(["old key", "new key"], sep="|"): verifies with either, signs with the newest
 def rotated := Signer.new ["old key", "new key"] (sep := "|")
 
--- URLSafeTimedSerializer(SECRET_KEY, salt="activate") with the real clock
-def main : IO Unit := do
-  let now ← getTimestamp                           -- upstream's get_timestamp()
-  let u := URLSafeTimedSerializer.new "secret-key" (salt := "activate")
-  let t := u.dumps "{\"user\":42}" now
-  IO.println (repr (u.loads t (maxAge := 3600) now)).pretty
+-- with the real clock: upstream's get_timestamp()
+def check (token : Bytes) : IO Bool := do
+  let now ← getTimestamp
+  return (ts.unsign token (maxAge := 3600) now).toBool
 ```
 
-`examples/Quickstart.lean` (`lake exe quickstart`) is this page, compiled.
-[`examples/`](examples/README.md) translates the rest of the itsdangerous
-docs (signer, timed, serializer, URL-safe, concepts, exceptions), each checked
-against upstream's output.
+[`examples/`](examples/README.md) ports every code block of the itsdangerous
+README and docs, 1:1, each checked against upstream's output.
 
 Names, argument order and defaults are upstream's: `salt`
 (`"itsdangerous.Signer"` for signers, `"itsdangerous"` for serializers),
 `sep` (`"."`), `keyDerivation` (`.djangoConcat`), `digestMethod` (`sha1`),
 `algorithm` (HMAC), `signerKwargs`, `fallbackSigners`. A string is accepted
-wherever upstream accepts `str` or `bytes`, and a non-empty list of keys
-wherever it accepts a list. What differs, and why, is listed in
+wherever upstream accepts `str` or `bytes`, and a list of keys (a literal or
+a defined list) wherever it accepts a list. What differs, and why, is listed in
 [CONTRIBUTING.md](CONTRIBUTING.md#deviations-from-upstream): time is an
 argument `now`; a separator literal is checked at compile time rather than
-raising `ValueError`; there is no zlib.
+raising `ValueError`; there is no zlib. Errors print as upstream's traceback
+line (`SignatureExpired: Signature age 10 > 5 seconds`) and `date_signed` as a
+`datetime`.
 
 `unsign` and `loads` return refinements: an `ok` result carries the proof of
 what it means (`{v // ∃ k ∈ s.secretKeys, s.signWith k v = token}` for

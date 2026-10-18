@@ -63,18 +63,20 @@ def checkSeparator (sep : Bytes) : Except String {s : Bytes // ValidSep s} :=
 /-- Upstream's default serializer salt `b"itsdangerous"`. -/
 def defaultSerializerSalt : Bytes := Bytes.ofString "itsdangerous"
 
-/-- `secret_key`: one key, or a non-empty list of keys from oldest to newest
-(the newest signs). A string, bytes, or a list literal of either converts. -/
-structure SecretKeys where
-  keys : List Bytes
-  h_keys : keys ≠ []
+/-- What upstream's `secret_key` accepts (`_make_keys_list`): one key as text
+or bytes, or a list of keys from oldest to newest (the newest signs). -/
+class IntoKeys (κ : Type) where
+  keys : κ → List Bytes
 
-instance : Coe String SecretKeys := ⟨fun k => ⟨[Bytes.ofString k], List.cons_ne_nil _ _⟩⟩
-instance : Coe Bytes SecretKeys := ⟨fun k => ⟨[k], List.cons_ne_nil _ _⟩⟩
-instance {k : String} {ks : List String} : CoeDep (List String) (k :: ks) SecretKeys :=
-  ⟨⟨(k :: ks).map Bytes.ofString, by simp⟩⟩
-instance {k : Bytes} {ks : List Bytes} : CoeDep (List Bytes) (k :: ks) SecretKeys :=
-  ⟨⟨k :: ks, List.cons_ne_nil _ _⟩⟩
+instance : IntoKeys String := ⟨fun k => [Bytes.ofString k]⟩
+instance : IntoKeys Bytes := ⟨fun k => [k]⟩
+instance : IntoKeys (List String) := ⟨List.map Bytes.ofString⟩
+instance : IntoKeys (List Bytes) := ⟨id⟩
+
+/-- The default proof that a key list is non-empty (upstream raises
+`IndexError` on first use otherwise): `simp` for a single key, `decide` for
+a list, literal or defined. -/
+macro "keys_nonempty" : tactic => `(tactic| first | decide | (simp [IntoKeys.keys]; done))
 
 /-- Upstream's `signer_kwargs`: everything about a signer but its keys and
 salt, with upstream's defaults. -/
@@ -100,11 +102,13 @@ def SignerKwargs.toConfig (k : SignerKwargs) : SignerConfig where
 namespace Signer
 
 /-- `Signer(secret_key, salt, sep, key_derivation, digest_method, algorithm)`. -/
-def new (secretKey : SecretKeys) (salt : Bytes := defaultSignerSalt) (sep : Bytes := defaultSep)
-    (h_sep : ValidSep sep := by decide) (keyDerivation : KeyDerivation := .djangoConcat)
-    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none) : Signer :=
+def new {κ : Type} [IntoKeys κ] (secretKey : κ) (salt : Bytes := defaultSignerSalt)
+    (sep : Bytes := defaultSep) (keyDerivation : KeyDerivation := .djangoConcat)
+    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none)
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty)
+    (h_sep : ValidSep sep := by decide) : Signer :=
   { ({ sep, h_sep, keyDerivation, digestMethod, algorithm } : SignerKwargs).toConfig with
-    secretKeys := secretKey.keys, h_keys := secretKey.h_keys, salt }
+    secretKeys := IntoKeys.keys secretKey, h_keys, salt }
 
 /-- `unsign(signed_value)`. On success, the value together with the proof
 that a key in the list signed it. -/
@@ -121,10 +125,12 @@ namespace TimestampSigner
 
 /-- `TimestampSigner(secret_key, salt, sep, key_derivation, digest_method,
 algorithm)`: what Starlette's `SessionMiddleware` constructs. -/
-def new (secretKey : SecretKeys) (salt : Bytes := defaultSignerSalt) (sep : Bytes := defaultSep)
-    (h_sep : ValidSep sep := by decide) (keyDerivation : KeyDerivation := .djangoConcat)
-    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none) : TimestampSigner :=
-  ⟨Signer.new secretKey salt sep h_sep keyDerivation digestMethod algorithm⟩
+def new {κ : Type} [IntoKeys κ] (secretKey : κ) (salt : Bytes := defaultSignerSalt)
+    (sep : Bytes := defaultSep) (keyDerivation : KeyDerivation := .djangoConcat)
+    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none)
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty)
+    (h_sep : ValidSep sep := by decide) : TimestampSigner :=
+  ⟨Signer.new secretKey salt sep keyDerivation digestMethod algorithm h_keys h_sep⟩
 
 /-- `unsign(signed_value, max_age, return_timestamp=True)` at time `now`. On
 success, the value and timestamp, with the proof that a key in the list
@@ -145,14 +151,15 @@ namespace Serializer
 variable {α : Type}
 
 /-- `Serializer(secret_key, salt, serializer, signer_kwargs, fallback_signers)`.
-The payload codec is found by type (`[Codec α]`), as upstream defaults to
-`json`; pass `(serializer := c)` to choose another. `salt := none` is
+The payload codec is found by type (`Codec α`), as upstream defaults to
+`json`; pass `serializer` to choose another. `salt := none` is
 upstream's `salt=None` (the signer's own default salt). -/
-def new (secretKey : SecretKeys) (salt : Option Bytes := some defaultSerializerSalt)
-    [serializer : Codec α] (signerKwargs : SignerKwargs := {})
-    (fallbackSigners : List SignerKwargs := []) : Serializer α where
-  secretKeys := secretKey.keys
-  h_keys := secretKey.h_keys
+def new {κ : Type} [IntoKeys κ] [c : Codec α] (secretKey : κ)
+    (salt : Option Bytes := some defaultSerializerSalt) (serializer : Codec α := c)
+    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := [])
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty) : Serializer α where
+  secretKeys := IntoKeys.keys secretKey
+  h_keys := h_keys
   salt := salt
   codec := serializer
   signer := signerKwargs.toConfig
@@ -174,12 +181,14 @@ safe in URLs and cookies. -/
 abbrev URLSafeSerializer (α : Type) := Serializer α
 
 /-- `URLSafeSerializer(secret_key, salt, serializer, signer_kwargs,
-fallback_signers)`. -/
-def URLSafeSerializer.new {α : Type} (secretKey : SecretKeys)
-    (salt : Option Bytes := some defaultSerializerSalt) [serializer : Codec α]
-    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := []) :
-    URLSafeSerializer α :=
-  Serializer.new secretKey salt (serializer := urlSafeCodec serializer) signerKwargs fallbackSigners
+fallback_signers)`. The default payload codec is the type's `CompactCodec`
+(upstream's `_CompactJSON`). -/
+def URLSafeSerializer.new {α κ : Type} [IntoKeys κ] [compact : CompactCodec α] (secretKey : κ)
+    (salt : Option Bytes := some defaultSerializerSalt) (serializer : Codec α := compact.codec)
+    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := [])
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty) : URLSafeSerializer α :=
+  Serializer.new (c := urlSafeCodec serializer) secretKey salt (urlSafeCodec serializer) signerKwargs
+    fallbackSigners h_keys
 
 namespace TimedSerializer
 
@@ -187,10 +196,11 @@ variable {α : Type}
 
 /-- `TimedSerializer(secret_key, salt, serializer, signer_kwargs,
 fallback_signers)`. -/
-def new (secretKey : SecretKeys) (salt : Option Bytes := some defaultSerializerSalt)
-    [serializer : Codec α] (signerKwargs : SignerKwargs := {})
-    (fallbackSigners : List SignerKwargs := []) : TimedSerializer α :=
-  ⟨Serializer.new secretKey salt signerKwargs fallbackSigners⟩
+def new {κ : Type} [IntoKeys κ] [c : Codec α] (secretKey : κ)
+    (salt : Option Bytes := some defaultSerializerSalt) (serializer : Codec α := c)
+    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := [])
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty) : TimedSerializer α :=
+  ⟨Serializer.new (c := serializer) secretKey salt serializer signerKwargs fallbackSigners h_keys⟩
 
 /-- `loads(s, max_age, return_timestamp=True, salt)` at time `now`. On
 success, the object and its timestamp with the proof that they come from a
@@ -212,11 +222,12 @@ abbrev URLSafeTimedSerializer (α : Type) := TimedSerializer α
 
 /-- `URLSafeTimedSerializer(secret_key, salt, serializer, signer_kwargs,
 fallback_signers)`. -/
-def URLSafeTimedSerializer.new {α : Type} (secretKey : SecretKeys)
-    (salt : Option Bytes := some defaultSerializerSalt) [serializer : Codec α]
-    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := []) :
-    URLSafeTimedSerializer α :=
-  TimedSerializer.new secretKey salt (serializer := urlSafeCodec serializer) signerKwargs
-    fallbackSigners
+def URLSafeTimedSerializer.new {α κ : Type} [IntoKeys κ] [compact : CompactCodec α]
+    (secretKey : κ) (salt : Option Bytes := some defaultSerializerSalt)
+    (serializer : Codec α := compact.codec) (signerKwargs : SignerKwargs := {})
+    (fallbackSigners : List SignerKwargs := [])
+    (h_keys : IntoKeys.keys secretKey ≠ [] := by keys_nonempty) : URLSafeTimedSerializer α :=
+  TimedSerializer.new (c := urlSafeCodec serializer) secretKey salt (urlSafeCodec serializer)
+    signerKwargs fallbackSigners h_keys
 
 end LeanItsdangerous

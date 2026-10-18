@@ -1,9 +1,7 @@
 import LeanItsdangerous
 import examples.Signer
 import examples.Timed
-import examples.Serializer
-import examples.UrlSafe
-import examples.Concepts
+import examples.Encoding
 import examples.Exceptions
 
 /-!
@@ -224,7 +222,7 @@ def timedSignerCases : List Case :=
       let ok1 := match tsSigner.unsign signed (some 10) (frozen + 1) with
         | .ok r => r.val.1 == b "value" | .error _ => false
       let ok2 := match tsSigner.unsign signed (some 10) (frozen + 11) with
-        | .error e => e.isSignatureExpired && e.dateSigned == some frozen.toNat | .ok _ => false
+        | .error e => e.isSignatureExpired && e.dateSigned == some ⟨frozen.toNat⟩ | .ok _ => false
       ensure (ok1 && ok2) "max_age"⟩,
     ⟨up "test_return_timestamp", "TestTimestampSigner: timestamp returned", do
       match tsSigner.unsign (tsSigner.sign (b "value") frozen) none frozen with
@@ -385,7 +383,7 @@ def otherSerializerCases : List Case := [
       let ok1 := match timedSer0.loads signed (some 10) (frozen + 1) with
         | .ok r => r.val.1 == "{\"id\":42}" | .error _ => false
       let ok2 := match timedSer0.loads signed (some 10) (frozen + 11) with
-        | .error e => e.isSignatureExpired && e.dateSigned == some frozen.toNat &&
+        | .error e => e.isSignatureExpired && e.dateSigned == some ⟨frozen.toNat⟩ &&
             (e.payload.map fun p => timedSer0.toSerializer.loadPayload p == .ok "{\"id\":42}") == some true
         | .ok _ => false
       ensure (ok1 && ok2) "max_age"⟩,
@@ -542,76 +540,63 @@ def errMsg {α : Type} : Except BadData α → String
   | .ok _ => "accepted"
 
 def docsCases : List Case := [
-  docCase "signer.rst::Signing Interface" "Signer.sign"
+  docCase "signer.rst#block-1" "Signer.sign"
     (Examples.Signer.signed == b "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA") s!"{Examples.Signer.signed}",
-  docCase "signer.rst::Signing Interface" "Signer.unsign"
+  docCase "signer.rst#block-2" "Signer.unsign"
     ((Examples.Signer.unsigned).val == .ok (b "my string")) "unsign",
-  docCase "signer.rst::Signing Interface" "Signer.unsign of a changed value"
+  docCase "signer.rst#block-3" "Signer.unsign of a changed value"
     ((match Examples.Signer.tampered with | .error e => e.message | .ok _ => "")
       == "Signature b'wh6tMHxLgJqB6oY1uT73iMlyrOA' does not match") "message",
-  docCase "signer.rst::Signing Algorithms" "NoneAlgorithm and SHA-256"
-    (Examples.Signer.unsignedSigner.sign "my string" == b "my string." &&
-     Examples.Signer.sha256Signer.sign "my string" == b "my string.PVHY4OzY_ekIpRd3A5G0vzTkhg8wSod5E3p90JgBCKw") "algorithms",
-  docCase "timed.rst::Signing With Timestamps" "TimestampSigner.sign"
+  docCase "timed.rst#block-1" "TimestampSigner.sign"
     (Examples.Timed.string == b "foo.ZVPxAA.IsOrIGtLkuP2keI23m0UgRvxgdY") s!"{Examples.Timed.string}",
-  docCase "timed.rst::Signing With Timestamps" "SignatureExpired: Signature age 15 > 5 seconds"
-    (errMsg Examples.Timed.tooOld == "Signature age 15 > 5 seconds" &&
-     (match Examples.Timed.tooOld with | .error e => e.dateSigned == some 1700000000 | .ok _ => false)) "expired",
-  docCase "timed.rst::Signing With Timestamps" "unsign within max_age, return_timestamp"
-    (Examples.Timed.fresh.val == .ok (b "foo", 1700000000)) "fresh",
-  docCase "timed.rst::TimedSerializer" "TimedSerializer.dumps"
-    (Examples.Timed.timedToken == b "[1, 2, 3, 4].ZVPxAA.ntr3GKq8MmJ7zD3OC1BOs7aq6VA") s!"{Examples.Timed.timedToken}",
-  docCase "serializer.rst::Serialization Interface" "Serializer.dumps"
-    (Examples.Serializer.token == b "[1, 2, 3, 4].r7R9RhGgDPvvWl3iNzLuIIfELmo") s!"{Examples.Serializer.token}",
-  docCase "serializer.rst::Serialization Interface" "Serializer.loads"
-    (Examples.Serializer.loaded.val == .ok "[1, 2, 3, 4]") "loads",
-  docCase "serializer.rst::Responding to Failure" "payload of a BadSignature"
-    (Examples.Serializer.decodedPayload == some "{\"id\":5}") "payload",
-  docCase "serializer.rst::Responding to Failure" "loads_unsafe"
-    (Examples.Serializer.unsafeResult == .ok (false, some "{\"id\":5}") &&
-     Examples.Serializer.u.loadsUnsafe "eyJpZCI6NX0.Miy6DmCsMs_TuHx_Rl2OXEaAyKo" == .ok (true, some "{\"id\":5}")) "unsafe",
-  docCase "serializer.rst::Fallback Signers" "SHA-512 signer, SHA-1 fallback"
-    (Examples.Serializer.newToken == b ("[1, 2, 3, 4].yiq3I159517XUuAUCH5_Kl8NJmANC-vT2H6yUors1WSyjcaXLaNni" ++
-      "Z29jI_NwpJ_37CBvnkD3IAV6YCjG1x67A") && Examples.Serializer.oldTokenLoads.val == .ok "[1, 2, 3, 4]")
-    s!"{Examples.Serializer.newToken}",
-  docCase "url_safe.rst::URL Safe Serialization" "URLSafeSerializer dumps/loads"
-    (Examples.UrlSafe.token == b "WzEsMiwzLDRd.wSPHqC0gR7VUqivlSukJ0IeTDgo" &&
-     Examples.UrlSafe.loaded.val == .ok "[1,2,3,4]") s!"{Examples.UrlSafe.token}",
-  docCase "url_safe.rst::URLSafeTimedSerializer" "URLSafeTimedSerializer.dumps"
-    (Examples.UrlSafe.timedToken == b "eyJhIjoxfQ.ZVPxAA.qIAQK7X87cwO6blIj4letDtfsCI") s!"{Examples.UrlSafe.timedToken}",
-  docCase "concepts.rst::The Salt" "salts activate and upgrade"
-    (Examples.Concepts.activate == b "NDI.MHQqszw6Wc81wOBQszCrEE_RlzY" &&
-     Examples.Concepts.upgrade == b "NDI.c0MpsD6gzpilOAeUPra3NShPXsE" &&
-     errMsg Examples.Concepts.crossSalt == "Signature b'MHQqszw6Wc81wOBQszCrEE_RlzY' does not match") "salt",
-  docCase "concepts.rst::Key Rotation" "rotate a key in and the oldest out"
-    (Examples.Concepts.t == b "{\"id\": 42}.vPnMXi_7YWhvSPnrl9Bcf1-2I44" &&
-     Examples.Concepts.stillValid.val == .ok "{\"id\": 42}" &&
-     Examples.Concepts.rotated == b "{\"id\": 42}.jGrDf14fqQmBTQeF9-Fg799Qixw") "rotation",
-  docCase "exceptions.rst::BadSignature" "no separator"
-    ((match Examples.Exceptions.noSeparator with | .error e => e.message | .ok _ => "") == "No b'.' found in value") "nosep",
-  docCase "exceptions.rst::BadTimeSignature" "timestamp missing"
+  docCase "timed.rst#block-2" "SignatureExpired: Signature age 15 > 5 seconds, date_signed"
+    (errMsg Examples.Timed.expired == "Signature age 15 > 5 seconds" &&
+     (match Examples.Timed.expired with
+      | .error e => (repr e.dateSigned).pretty ==
+          "some datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=datetime.timezone.utc)"
+      | .ok _ => false)) "expired",
+  docCase "encoding.rst" "base64_encode / base64_decode"
+    (Examples.Encoding.encoded == b "54Sh6ZmQ" && Examples.Encoding.decoded == some (b "無限") &&
+     Examples.Encoding.invalid == none) s!"{Examples.Encoding.encoded}",
+  docCase "exceptions.rst" "BadSignature.payload"
+    ((match Examples.Exceptions.badSignature with
+      | .error e => e.message == "Signature b'AAAAAAAAAAAAAAAAAAAAAAAAAAA' does not match" &&
+          e.payload == some (b "my string")
+      | .ok _ => false)) "payload",
+  docCase "exceptions.rst" "BadTimeSignature: timestamp missing"
     ((match Examples.Exceptions.timestampMissing with
       | .error e => e.isBadTimeSignature && e.message == "timestamp missing" && e.dateSigned == none
       | .ok _ => false)) "missing",
-  docCase "exceptions.rst::SignatureExpired" "expired carries payload and date"
+  docCase "exceptions.rst" "SignatureExpired carries date_signed"
     ((match Examples.Exceptions.expired with
-      | .error e => e.isSignatureExpired && e.isBadSignature && e.payload == some (b "value") &&
-          e.dateSigned == some 1700000000
+      | .error e => e.isSignatureExpired && e.isBadSignature &&
+          (e.dateSigned.map toString) == some "2023-11-14 22:13:20+00:00"
       | .ok _ => false)) "expired",
-  docCase "exceptions.rst::BadPayload" "BadPayload message"
+  docCase "exceptions.rst" "BadPayload message"
     ((match Examples.Exceptions.badPayload with
       | .error e => e.isBadPayload &&
           e.message == "Could not load the payload because an exception occurred on unserializing the data."
-      | .ok _ => false)) "payload",
-  docCase "signer.rst::Signer" "ValueError for separator '-'"
-    ((match Examples.Exceptions.badSeparator with | .error m => m == separatorError | .ok _ => false) &&
-     separatorError == "The given separator cannot be used because it may be contained in the signature itself. ASCII letters, digits, and '-_=' must not be used.") "sep"
+      | .ok _ => false)) "payload"
 ]
+
+/-- `date_signed` renders as Python renders a `datetime`, for timestamps
+across leap days and centuries (values from Python's `datetime`). -/
+def dateTimeCases : List Case :=
+  let cases : List (Nat × String × String) := [
+    (0, "1970-01-01 00:00:00+00:00", "datetime.datetime(1970, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)"),
+    (951782400, "2000-02-29 00:00:00+00:00", "datetime.datetime(2000, 2, 29, 0, 0, tzinfo=datetime.timezone.utc)"),
+    (1709251199, "2024-02-29 23:59:59+00:00", "datetime.datetime(2024, 2, 29, 23, 59, 59, tzinfo=datetime.timezone.utc)"),
+    (4102444799, "2099-12-31 23:59:59+00:00", "datetime.datetime(2099, 12, 31, 23, 59, 59, tzinfo=datetime.timezone.utc)"),
+    (1700000000, "2023-11-14 22:13:20+00:00", "datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=datetime.timezone.utc)")]
+  cases.map fun (ts, str, rep) =>
+    ⟨"src/itsdangerous/timed.py::TimestampSigner.timestamp_to_datetime", s!"datetime of {ts}",
+      ensure (toString (DateTime.mk ts) == str && (repr (DateTime.mk ts)).pretty == rep)
+        s!"{DateTime.mk ts} / {repr (DateTime.mk ts)}"⟩
 
 def cases : List Case :=
   encodingCases ++ signerSuite "TestSigner" (fun s => plainSUT s) ++
   signerSuite "TestTimestampSigner" (fun s => timedSUT s) ++ timedSignerCases ++
-  serializerCases ++ otherSerializerCases ++ kats.map katCase ++ docsCases
+  serializerCases ++ otherSerializerCases ++ kats.map katCase ++ docsCases ++ dateTimeCases
 
 def main : IO UInt32 := do
   let mut failures := 0

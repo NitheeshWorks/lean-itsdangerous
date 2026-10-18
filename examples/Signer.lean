@@ -4,43 +4,45 @@ open LeanItsdangerous
 /-!
 # Signing Interface
 
-Translates itsdangerous `docs/signer.rst` ("Signing Interface").
-
-```python
-from itsdangerous import Signer
-s = Signer("secret-key")
-s.sign("my string")                                  # b'my string.wh6tMHxLgJqB6oY1uT73iMlyrOA'
-s.unsign(b"my string.wh6tMHxLgJqB6oY1uT73iMlyrOA")   # b'my string'
-s.unsign(b"different string.wh6tMHxLgJqB6oY1uT73iMlyrOA")   # BadSignature
-```
+Port of itsdangerous `docs/signer.rst` ("Signing Interface"), block by block.
 -/
 
 namespace Examples.Signer
 
-def s := Signer.new "secret-key"
+/-! Block 1:
+```python
+from itsdangerous import Signer
+s = Signer("secret-key")
+s.sign("my string")
+b'my string.wh6tMHxLgJqB6oY1uT73iMlyrOA'
+```
+-/
 
-/-- The signature is appended to the string, separated by a dot. -/
+def s := Signer.new "secret-key"
 def signed := s.sign "my string"
 #eval signed                    -- b'my string.wh6tMHxLgJqB6oY1uT73iMlyrOA'
 
-/-- To validate the string, use `unsign`. -/
+/-! Block 2:
+```python
+s.unsign(b"my string.wh6tMHxLgJqB6oY1uT73iMlyrOA")
+b'my string'
+```
+-/
+
 def unsigned := s.unsign "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA"
 #eval unsigned                  -- Except.ok b'my string'
 
-/-- If the value is changed, the signature no longer matches. -/
+/-! Block 3:
+```python
+s.unsign(b"different string.wh6tMHxLgJqB6oY1uT73iMlyrOA")
+Traceback (most recent call last):
+  ...
+BadSignature: Signature does not match
+```
+-/
+
 def tampered := s.unsign "different string.wh6tMHxLgJqB6oY1uT73iMlyrOA"
-#eval match tampered with
-  | .ok _ => "accepted"
-  | .error e => s!"BadSignature: {e.message}"
--- BadSignature: Signature b'wh6tMHxLgJqB6oY1uT73iMlyrOA' does not match
-
--- Text is encoded as UTF-8 implicitly, as upstream does.
-#eval s.sign "mañana" == s.sign (Bytes.ofString "mañana")   -- true
-
-/-- The signing algorithms: `NoneAlgorithm` and `HMACAlgorithm`. -/
-def unsignedSigner := Signer.new "secret-key" (algorithm := some noneAlgorithm)
-#eval unsignedSigner.sign "my string"       -- b'my string.'
-def sha256Signer := Signer.new "secret-key" (digestMethod := sha256)
-#eval sha256Signer.sign "my string"
+#eval tampered
+-- Except.error BadSignature: Signature b'wh6tMHxLgJqB6oY1uT73iMlyrOA' does not match
 
 end Examples.Signer

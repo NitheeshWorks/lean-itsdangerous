@@ -19,7 +19,8 @@ lake env lean --run scripts/Axioms.lean "$LIB"
 
 echo "== examples =="
 lake build Examples
-lake exe quickstart
+if [[ -f ../stack-tools/check-examples.py ]]; then python3 ../stack-tools/check-examples.py .; fi
+(cd examples/json && lake build && lake exe check && lake exe quickstart)
 
 echo "== property tests =="
 lake exe props

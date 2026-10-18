@@ -1,6 +1,6 @@
 name = "LeanItsdangerous"
 version = "0.1.0"
-defaultTargets = ["LeanItsdangerous", "Examples", "props", "conformance", "quickstart"]
+defaultTargets = ["LeanItsdangerous", "Examples", "props", "conformance"]
 
 # The verified library. Everything under LeanItsdangerous/ except Transport.lean is a
 # total function and the proof surface; see CONTRIBUTING.md.
@@ -19,15 +19,10 @@ root = "tests.Props"
 name = "conformance"
 root = "tests.Conformance"
 
-# The itsdangerous docs, translated: one module per docs page (see
-# examples/README.md). Built with the library; `tests/Conformance.lean` checks
-# every value they print against upstream itsdangerous 2.2.0.
+# Ports of the itsdangerous docs pages that need no JSON (see
+# examples/MANIFEST.toml); the serializer pages, with real JSON values, are
+# the separate package examples/json. `tests/Conformance.lean` checks every
+# value these print against upstream itsdangerous 2.2.0.
 [[lean_lib]]
 name = "Examples"
-roots = ["examples.Quickstart", "examples.Signer", "examples.Timed", "examples.Serializer",
-  "examples.UrlSafe", "examples.Concepts", "examples.Exceptions"]
-
-# The README quickstart as a program: `lake exe quickstart`.
-[[lean_exe]]
-name = "quickstart"
-root = "examples.Quickstart"
+roots = ["examples.Signer", "examples.Timed", "examples.Encoding", "examples.Exceptions"]

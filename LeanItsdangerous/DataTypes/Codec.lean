@@ -45,4 +45,16 @@ A `Json` codec comes from lean-json. -/
     | some s => .ok s
     | none => .error "invalid utf-8"
 
+/-- The payload codec the URL-safe serializers use by default: upstream's
+`_CompactJSON` (no spaces), where the plain serializers use `json.dumps`'s
+default separators. Without a specific instance it is the type's `Codec`. -/
+class CompactCodec (α : Type) where
+  codec : Codec α
+
+instance (priority := low) {α : Type} [c : Codec α] : CompactCodec α := ⟨c⟩
+
+/-- Text payloads are the same either way; the default instance, as for
+`Codec`. -/
+@[default_instance] instance : CompactCodec String := ⟨inferInstance⟩
+
 end LeanItsdangerous

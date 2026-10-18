@@ -104,9 +104,9 @@ def checkAge (maxAge : Option Nat) (now : UInt64) (value : Bytes) (ts : UInt64) 
   | some m =>
     let age : Int := (now.toNat : Int) - ts.toNat
     if age > m then
-      some (.signatureExpired s!"Signature age {age} > {m} seconds" (some value) (some ts.toNat))
+      some (.signatureExpired s!"Signature age {age} > {m} seconds" (some value) (some ⟨ts.toNat⟩))
     else if age < 0 then
-      some (.signatureExpired s!"Signature age {age} < 0 seconds" (some value) (some ts.toNat))
+      some (.signatureExpired s!"Signature age {age} < 0 seconds" (some value) (some ⟨ts.toNat⟩))
     else none
 
 /-- Everything `unsign(signed_value, return_timestamp=True)` checks except
@@ -132,7 +132,7 @@ def unsignCore (t : TimestampSigner) (signed : Bytes) : Except BadData (Bytes ×
       | some ts =>
         if ts.toNat > maxDatetimeTs then
           .error (.badTimeSignature "Malformed timestamp" (some value) none)
-        else .error (.badTimeSignature e.message (some value) (some ts.toNat))
+        else .error (.badTimeSignature e.message (some value) (some ⟨ts.toNat⟩))
       | none => .error (.badTimeSignature e.message (some value) none)
     | none =>
       match tsInt with
