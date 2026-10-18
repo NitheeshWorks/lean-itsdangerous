@@ -10,9 +10,9 @@ Two kinds of check live here.
   one-million-`a` messages), HMAC-SHA1 against RFC 2202, HMAC-SHA256 and
   HMAC-SHA512 against RFC 4231. A vector property ignores the generator.
 * **Seeded properties** on random inputs: the proved round trips as smoke
-  tests of the definitions, and the hypotheses the tampering theorems take
-  about HMAC (distinct values give distinct signatures; flipping a byte of a
-  signed string makes `unsign` fail), checked on the real HMAC-SHA1.
+  tests of the definitions, a sampled no-collision smoke test of HMAC-SHA1,
+  and that flipping a byte of a signed string makes `unsign` fail on the
+  real HMAC-SHA1.
 
 Run with `lake exe props`, or a different seed with `lake exe props 12345`.
 A failure prints the seed and the value, so it reproduces exactly.
@@ -156,7 +156,7 @@ def randomProps : List Property := [
       let (m, r) := r.bytes 100
       let k := k ++ List.replicate 65 7
       ((if hmac sha256 k m == hmac sha256 (sha256.digest k) m then none else some s!"{k.toHex}"), r) },
-  { name := "HMAC-SHA1 outputs differ on distinct values (hypothesis of unsign_tampered)"
+  { name := "HMAC-SHA1 no collision on sampled random pairs (smoke test; cannot test a for-all)"
     check := fun r =>
       let (k, r) := r.bytes 40
       let (m₁, r) := r.bytes 60

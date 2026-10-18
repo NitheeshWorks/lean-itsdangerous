@@ -17,7 +17,7 @@ open LeanItsdangerous
 /-- HMAC-SHA256 has a fixed output length. -/
 example : ∀ (k m : List UInt8), (hmac sha256 k m).length = 32 := by plausible
 
-/-- HMAC-SHA1 separates distinct messages (the hypothesis of `unsign_tampered`). -/
+/-- HMAC-SHA1 has no collision on sampled pairs (a smoke test; it cannot test a for-all). -/
 example : ∀ (k m₁ m₂ : List UInt8), m₁ ≠ m₂ → hmac sha1 k m₁ ≠ hmac sha1 k m₂ := by plausible
 
 /-- base64url round trip (proved as `b64decode_b64encode`). -/

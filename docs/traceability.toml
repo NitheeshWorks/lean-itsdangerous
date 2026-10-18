@@ -67,7 +67,7 @@ status = "tested"
 realises = ["LeanItsdangerous.hmac", "LeanItsdangerous.hmacAlgorithm"]
 theorem = ["LeanItsdangerous.length_hmac"]
 test = ["tests/Props.lean", "tests/pbt/Pbt.lean"]
-note = "Trusted, not proved. Checked against RFC 2202 (SHA-1) and RFC 4231 (SHA-256, SHA-512) vectors. Its collision resistance is an explicit hypothesis of the tampering theorems, property-tested on random inputs."
+note = "Trusted, not proved. Checked against RFC 2202 (SHA-1) and RFC 4231 (SHA-256, SHA-512) vectors. No proof assumes its collision resistance: the tampering theorems conclude that a successful forgery exhibits a collision."
 
 [[requirement]]
 id = "signer.sign-unsign"
@@ -75,7 +75,7 @@ upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_signer"
 title = "unsign(sign(v)) == v"
 status = "implemented"
 realises = ["LeanItsdangerous.Signer.sign", "LeanItsdangerous.Signer.unsign", "LeanItsdangerous.Signer.unsignImpl"]
-theorem = ["LeanItsdangerous.Signer.unsign_sign", "LeanItsdangerous.Signer.unsign_sound", "LeanItsdangerous.Signer.unsign_ok_iff"]
+theorem = ["LeanItsdangerous.Signer.unsign_sign", "LeanItsdangerous.Signer.session_sign_verify", "LeanItsdangerous.Signer.unsign_sound", "LeanItsdangerous.Signer.unsign_ok_iff"]
 test = ["tests/Conformance.lean::test_signer"]
 
 [[requirement]]
@@ -104,7 +104,7 @@ status = "implemented"
 realises = ["LeanItsdangerous.Signer.unsignImpl"]
 theorem = ["LeanItsdangerous.Signer.unsign_tampered", "LeanItsdangerous.Signer.unsign_tampered_value", "LeanItsdangerous.Signer.unsign_tampered_single", "LeanItsdangerous.Signer.rawSignature_length_hmac"]
 test = ["tests/Conformance.lean::test_changed_value", "tests/Props.lean"]
-note = "Proved under explicit hypotheses on the trusted algorithm: distinct values give distinct raw signatures, and raw signatures have a fixed length (discharged for HMAC)."
+note = "Proved without assuming collision resistance: if a one-byte change makes unsign succeed, it returns the original value or exhibits an explicit collision (a different value with the same raw signature). Only hypothesis: fixed signature length, discharged for HMAC."
 
 [[requirement]]
 id = "signer.invalid-separator"
@@ -173,9 +173,9 @@ id = "signer.compare"
 upstream = "src/itsdangerous/signer.py::SigningAlgorithm.verify_signature"
 title = "signature comparison"
 status = "deviation"
-realises = ["LeanItsdangerous.Signer.verifySignature"]
-theorem = ["LeanItsdangerous.Signer.verifySignature_iff"]
-note = "Upstream base64-decodes the signature and uses hmac.compare_digest. We compare the canonical base64url encoding with ordinary equality: identical on every signature upstream emits, rejects non-canonical spellings Python's lenient decoder accepts, and is not constant-time (Lean gives no timing guarantees)."
+realises = ["LeanItsdangerous.Signer.verifySignature", "LeanItsdangerous.ctEq"]
+theorem = ["LeanItsdangerous.Signer.verifySignature_iff", "LeanItsdangerous.ctEq_iff"]
+note = "Upstream base64-decodes the signature and uses hmac.compare_digest. We compare the canonical base64url encoding with ctEq: length check, then an OR of XORs over every byte pair with no early exit (ctEq_iff proves it is equality). Same verdict on every signature upstream emits; rejects non-canonical spellings Python's lenient decoder accepts. Lean gives no timing guarantee for the compiled code."
 
 [[requirement]]
 id = "timed.max-age"
@@ -395,3 +395,12 @@ status = "implemented"
 realises = ["LeanItsdangerous.Signer.unsign", "LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.Serializer.loads", "LeanItsdangerous.TimedSerializer.loads"]
 theorem = ["LeanItsdangerous.Signer.unsign_map_val", "LeanItsdangerous.TimestampSigner.unsign_map_val", "LeanItsdangerous.Serializer.loads_map_val", "LeanItsdangerous.TimedSerializer.loads_map_val"]
 test = ["tests/Conformance.lean"]
+
+[[requirement]]
+id = "interop.known-answer"
+upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_key_derivation"
+title = "byte-exact tokens match upstream itsdangerous 2.2.0 (every key derivation x SHA-1/SHA-256, custom separator and salt, rotation, timestamps 0/255/256/2^32, URL-safe and timed serializers, a Starlette session cookie)"
+status = "tested"
+realises = ["LeanItsdangerous.Signer.sign", "LeanItsdangerous.Signer.deriveKey", "LeanItsdangerous.TimestampSigner.sign", "LeanItsdangerous.Serializer.dumps", "LeanItsdangerous.TimedSerializer.dumps"]
+test = ["tests/Conformance.lean::kats"]
+note = "Token bytes depend on the trusted SHA/HMAC, so interoperability is tested, not proved. Vectors generated with upstream-spec/.venv python -I against itsdangerous 2.2.0."

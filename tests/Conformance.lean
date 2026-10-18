@@ -403,10 +403,118 @@ def encodingCases : List Case := [
       ensure (cases.all fun (n, e) => intToBytes n == e && bytesToInt e == some n) "int bytes"⟩
 ]
 
+/-! ## Known-answer tokens from upstream itsdangerous 2.2.0
+
+Byte-exact tokens produced by upstream itsdangerous 2.2.0 (key `secret-key`
+unless stated; timestamps fixed by overriding `get_timestamp`). The upstream
+tests above check only round trips for these configurations; these pin the
+bytes, so a swapped key-derivation formula, HMAC argument order or timestamp
+byte order fails here. Each case also checks that `unsign`/`loads` accepts
+the upstream token. -/
+
+structure Kat where
+  upstream : String
+  name : String
+  produced : Bytes
+  expected : String
+  accepts : Bool
+
+def katCase (k : Kat) : Case :=
+  ⟨k.upstream, s!"known answer: {k.name}", ensure (k.produced == b k.expected && k.accepts)
+    s!"got {k.produced}, expected {k.expected}, accepts={k.accepts}"⟩
+
+def signerKat (kd : KeyDerivation) (h : Hash) (kdName expected : String) : Kat :=
+  let s := Signer.ofKey (b "secret-key") (cfg := SignerConfig.default (keyDerivation := kd) (digest := h))
+  { upstream := "tests/test_itsdangerous/test_signer.py::TestSigner::" ++
+      (if h.name == "sha1" then "test_key_derivation" else "test_digest_method")
+    name := s!"Signer {h.name} {kdName}"
+    produced := s.sign (b "my string")
+    expected
+    accepts := s.validate (b expected) }
+
+def tsKat (ts : UInt64) (v expected : String) : Kat :=
+  let t := TimestampSigner.ofKey (b "secret-key")
+  { upstream := "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_return_timestamp"
+    name := s!"TimestampSigner ts={ts} {v}"
+    produced := t.sign ts (b v)
+    expected
+    accepts := match t.unsign (b expected) none ts with
+      | .ok r => r.val == (b v, ts) | .error _ => false }
+
+def customSepSigner : Signer :=
+  match SignerConfig.new (b "|") with
+  | .ok cfg => Signer.ofKey (b "secret-key") (salt := b "custom-salt") (cfg := cfg)
+  | .error _ => Signer.ofKey (b "unreachable")
+
+def rotSigner : Signer := Signer.ofKeys [b "old", b "new"] (by simp)
+
+def urlSafe : Serializer String := URLSafeSerializer.ofKey (b "secret-key") jsonText
+def urlSafeSalt : Serializer String := URLSafeSerializer.ofKey (b "secret-key") jsonText (salt := some (b "activate"))
+def urlSafeTimed : TimedSerializer String := URLSafeTimedSerializer.ofKey (b "secret-key") jsonText
+def timedPlain : TimedSerializer String := TimedSerializer.ofKey (b "secret_key") jsonText
+def starletteSigner : TimestampSigner := TimestampSigner.ofKey (b "example")
+def starletteData : String := "eyJ1c2VyIjogImFsaWNlIn0="
+
+def kats : List Kat := [
+  signerKat .concat sha1 "concat" "my string.WVn1orytePdJMO-gerBb0CoxFMs",
+  signerKat .djangoConcat sha1 "django-concat" "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA",
+  signerKat .hmac sha1 "hmac" "my string.pFgSwq6wOZqq2WMqgkxNLVn16QY",
+  signerKat .none sha1 "none" "my string.jdP_vbFmmLI4saUm2wcIut0z2MQ",
+  signerKat .concat sha256 "concat" "my string.Dy-9UM0Xc6N5vpsCbSzG_vONu5By2MVMAFiUIbDPNrw",
+  signerKat .djangoConcat sha256 "django-concat" "my string.PVHY4OzY_ekIpRd3A5G0vzTkhg8wSod5E3p90JgBCKw",
+  signerKat .hmac sha256 "hmac" "my string.9gNXlg5H__tL4eudpMDWVAk9FCr72htCAUx80xrV9gM",
+  signerKat .none sha256 "none" "my string.0A34Z7kdl36oAXGceNspSDf1wOz0IS0ASArypw7_Lms",
+  { upstream := "tests/test_itsdangerous/test_signer.py::TestSigner::test_signer"
+    name := "Signer sep '|' salt custom-salt"
+    produced := customSepSigner.sign (b "my string")
+    expected := "my string|KXoAxp_1PqthcdIhZEMH6jocYlQ"
+    accepts := customSepSigner.validate (b "my string|KXoAxp_1PqthcdIhZEMH6jocYlQ") },
+  { upstream := "tests/test_itsdangerous/test_signer.py::TestSigner::test_secret_keys"
+    name := "Signer [old, new] signs with the newest key"
+    produced := rotSigner.sign (b "v")
+    expected := "v.36xUtSROzMo9IUv6FUAqcLcS7_Y"
+    accepts := (Signer.ofKey (b "new")).validate (b "v.36xUtSROzMo9IUv6FUAqcLcS7_Y") },
+  tsKat 0 "v" "v..laaFEvAn6iGJwjqtau5N2YmZ0A8",
+  tsKat 255 "v" "v._w.u0GYwMSLW0hJhBJF9vicXI0nzfA",
+  tsKat 256 "v" "v.AQA.oTwPDMwTbTNdviKzH2UM_1ECDSs",
+  tsKat 4294967296 "v" "v.AQAAAAA.gF5qB1AFkyPib47h3CIK88R7gN8",
+  tsKat 1700000000 "v" "v.ZVPxAA.1riky2Uj5pB3LQJugNYKQDv4fvM",
+  tsKat 1700000000 "my string" "my string.ZVPxAA.jr6oPKNI4x66_7OoEQCvO5o789s",
+  { upstream := "tests/test_itsdangerous/test_url_safe.py::TestURLSafeSerializer::test_serializer"
+    name := "URLSafeSerializer {\"id\":42}"
+    produced := urlSafe.dumps "{\"id\":42}"
+    expected := "eyJpZCI6NDJ9.Z-HaNt236Oj5pFDPW25MouYkrcA"
+    accepts := (urlSafe.loads (b "eyJpZCI6NDJ9.Z-HaNt236Oj5pFDPW25MouYkrcA")).map (·.val) == .ok "{\"id\":42}" },
+  { upstream := "tests/test_itsdangerous/test_url_safe.py::TestURLSafeSerializer::test_alt_salt"
+    name := "URLSafeSerializer salt activate"
+    produced := urlSafeSalt.dumps "{\"id\":42}"
+    expected := "eyJpZCI6NDJ9.lXMQDXurRwywHccJV6dRfCQk0eQ"
+    accepts := (urlSafeSalt.loads (b "eyJpZCI6NDJ9.lXMQDXurRwywHccJV6dRfCQk0eQ")).map (·.val) == .ok "{\"id\":42}" },
+  { upstream := "tests/test_itsdangerous/test_url_safe.py::TestURLSafeTimedSerializer::test_return_payload"
+    name := "URLSafeTimedSerializer {\"a\":1} at 1700000000"
+    produced := urlSafeTimed.dumps 1700000000 "{\"a\":1}"
+    expected := "eyJhIjoxfQ.ZVPxAA.qIAQK7X87cwO6blIj4letDtfsCI"
+    accepts := (urlSafeTimed.loads (b "eyJhIjoxfQ.ZVPxAA.qIAQK7X87cwO6blIj4letDtfsCI") none 1700000000).map (·.val)
+      == .ok ("{\"a\":1}", 1700000000) },
+  { upstream := "tests/test_itsdangerous/test_timed.py::TestTimedSerializer::test_return_payload"
+    name := "TimedSerializer {\"id\": 42} at 1700000000"
+    produced := timedPlain.dumps 1700000000 "{\"id\": 42}"
+    expected := "{\"id\": 42}.ZVPxAA.aFESr2OogwT9RtL_Xt98-zUL8QI"
+    accepts := (timedPlain.loads (b "{\"id\": 42}.ZVPxAA.aFESr2OogwT9RtL_Xt98-zUL8QI") none 1700000000).map (·.val)
+      == .ok ("{\"id\": 42}", 1700000000) },
+  { upstream := "starlette:tests/middleware/test_session.py::test_session"
+    name := "Starlette SessionMiddleware cookie (TimestampSigner(\"example\"))"
+    produced := starletteSigner.sign 1700000000 (b starletteData)
+    expected := starletteData ++ ".ZVPxAA.vA70g_JgN4tTucTzi3dRghALTvE"
+    accepts := match starletteSigner.unsign (b (starletteData ++ ".ZVPxAA.vA70g_JgN4tTucTzi3dRghALTvE"))
+        (some 1209600) 1700000100 with
+      | .ok r => r.val.1 == b starletteData | .error _ => false }
+]
+
 def cases : List Case :=
   encodingCases ++ signerSuite "TestSigner" (fun s => plainSUT s) ++
   signerSuite "TestTimestampSigner" (fun s => timedSUT s) ++ timedSignerCases ++
-  serializerCases ++ otherSerializerCases
+  serializerCases ++ otherSerializerCases ++ kats.map katCase
 
 def main : IO UInt32 := do
   let mut failures := 0

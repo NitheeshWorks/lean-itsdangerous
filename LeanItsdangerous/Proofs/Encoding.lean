@@ -150,6 +150,31 @@ theorem decodeTimestamp_encodeTimestamp (ts : UInt64) :
   simp [TimestampSigner.decodeTimestamp, TimestampSigner.encodeTimestamp,
     base64Decode_b64encode, bytesToInt_intToBytes]
 
+/-! ## Comparison -/
+
+theorem diffAcc_eq_zero_iff (acc : UInt8) (a b : Bytes) (h : a.length = b.length) :
+    diffAcc acc a b = 0 ↔ acc = 0 ∧ a = b := by
+  induction a generalizing acc b with
+  | nil => cases b with
+    | nil => simp [diffAcc]
+    | cons _ _ => simp at h
+  | cons x xs ih => cases b with
+    | nil => simp at h
+    | cons y ys =>
+      simp only [List.length_cons, Nat.add_right_cancel_iff] at h
+      simp only [diffAcc, ih _ _ h, UInt8.or_eq_zero_iff, UInt8.xor_eq_zero_iff, List.cons.injEq]
+      constructor
+      · rintro ⟨⟨h1, h2⟩, h3⟩; exact ⟨h1, h2, h3⟩
+      · rintro ⟨h1, h2, h3⟩; exact ⟨⟨h1, h2⟩, h3⟩
+
+/-- The comparison is equality. -/
+theorem ctEq_iff (a b : Bytes) : ctEq a b = true ↔ a = b := by
+  unfold ctEq
+  by_cases hl : a.length = b.length
+  · simp [hl, diffAcc_eq_zero_iff 0 a b hl]
+  · simp only [Bool.and_eq_true, beq_iff_eq, hl, false_and, false_iff]
+    exact fun h => hl (h ▸ rfl)
+
 /-! ## Splitting -/
 
 theorem splitFirst_sound {pat l a b : Bytes} (h : splitFirst pat l = some (a, b)) :

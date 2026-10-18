@@ -14,8 +14,8 @@ so this file stays an honest map of what is verified.
 
 Not here, because tested rather than proved: the bit-level correctness of
 SHA-1, SHA-256, SHA-512 and HMAC (FIPS 180-4 and RFC 2202/4231 vectors in
-`tests/Props.lean`). The proofs that use HMAC take its collision resistance
-as an explicit hypothesis.
+`tests/Props.lean`). No proof assumes HMAC is collision resistant: the
+tampering slots conclude that a successful forgery exhibits a collision.
 -/
 
 namespace LeanItsdangerous
@@ -43,15 +43,17 @@ structure VerifiedSigner where
   unsignTamperedValue : Spec.UnsignTamperedValue
   unsignTampered : Spec.UnsignTampered
   unsignTamperedSingle : Spec.UnsignTamperedSingle
+  ctEqIsEq : Spec.CtEqIsEq
 
 theorem theVerifiedSigner : VerifiedSigner := {
   unsignSign := Signer.unsign_sign,
   keyRotation s _ hk v := s.unsign_signWith hk v,
   unsignSound _ _ _ h := Signer.unsign_sound h,
   unsignTamperedValue := Signer.unsign_tampered_value,
-  unsignTampered s _ v i b hlen hk hdiff := s.unsign_tampered v i b hlen hk hdiff,
-  unsignTamperedSingle s _ hkeys v i hi b hb hlen hdiff :=
-    s.unsign_tampered_single hkeys v i hi b hb hlen hdiff }
+  unsignTampered s _ v i b hlen hk r hr := s.unsign_tampered v i b hlen hk r hr,
+  unsignTamperedSingle s _ hkeys v i hi b hb hlen :=
+    s.unsign_tampered_single hkeys v i hi b hb hlen,
+  ctEqIsEq := ctEq_iff }
 
 /-- `TimestampSigner`: round trip with rotation, soundness, `max_age`. -/
 structure VerifiedTimestampSigner where

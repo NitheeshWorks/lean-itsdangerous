@@ -54,11 +54,13 @@ def signWith (s : Signer) (secretKey value : Bytes) : Bytes :=
 def sign (s : Signer) (value : Bytes) : Bytes := s.signWith s.secretKey value
 
 /-- `verify_signature(value, sig)`: does any secret key produce exactly
-`sig`? Upstream decodes `sig` and compares raw bytes; comparing the canonical
-encoding instead is the same on every signature upstream produces, and
-rejects the non-canonical spellings Python's lenient decoder would accept. -/
+`sig`? Upstream decodes `sig` and compares raw bytes with
+`hmac.compare_digest`; here the canonical encodings are compared with `ctEq`,
+which also visits every byte. It agrees with upstream on every signature
+upstream produces, and rejects the non-canonical spellings Python's lenient
+decoder would accept. -/
 def verifySignature (s : Signer) (value sig : Bytes) : Bool :=
-  s.secretKeys.reverse.any fun k => s.signatureFor k value == sig
+  s.secretKeys.reverse.any fun k => ctEq (s.signatureFor k value) sig
 
 /-- `unsign(signed_value)`. The public `Signer.unsign` (`APIs/`) is this,
 refined with a proof of what an `ok` result means. -/

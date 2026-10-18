@@ -7,10 +7,11 @@ Each is a `Prop` about the implementation in `RepoImpl/`, with no proof
 attached. `Proofs/Verified.lean` has one slot per property, filled by the
 theorem of `Proofs/` that proves it.
 
-Two hypotheses recur. HMAC is trusted, not proved, so its collision
-resistance appears as an explicit hypothesis on the raw signatures
-(`hdiff`), and so does the fixed signature length (`hlen`), which
-`Signer.rawSignature_length_hmac` discharges for HMAC.
+HMAC is trusted, not proved, and nothing here assumes it is collision
+resistant. The tampering properties instead conclude that a successful forgery
+*exhibits* a collision (a different value with the same raw signature); their
+one hypothesis about the algorithm is a fixed signature length (`hlen`),
+which `Signer.rawSignature_length_hmac` discharges for HMAC.
 -/
 
 namespace LeanItsdangerous.Spec
@@ -48,28 +49,35 @@ def UnsignSound : Prop :=
   ∀ (s : Signer) (input v : Bytes), s.unsignImpl input = .ok v →
     ∃ k ∈ s.secretKeys, s.signWith k v = input
 
-/-- Replacing the value under a signature makes `unsign` fail, if the
-algorithm's outputs differ. -/
+/-- Replacing the value under a signature makes `unsign` fail, or exhibits
+an explicit collision of the signing algorithm. -/
 def UnsignTamperedValue : Prop :=
   ∀ (s : Signer) (k v v' : Bytes),
-    (∀ k' ∈ s.secretKeys, s.rawSignature k' v' ≠ s.rawSignature k v) →
-    ∃ e, s.unsignImpl (v' ++ s.sep ++ s.signatureFor k v) = .error e
+    (∃ e, s.unsignImpl (v' ++ s.sep ++ s.signatureFor k v) = .error e) ∨
+      ∃ k' ∈ s.secretKeys, s.rawSignature k' v' = s.rawSignature k v
 
-/-- Changing one byte of a signed string never yields a different value. -/
+/-- Changing one byte of a signed string: a successful `unsign` returns the
+original value, or exhibits an explicit collision of the signing algorithm
+(a different value with the same raw signature). No collision resistance is
+assumed; only that raw signatures have a fixed length. -/
 def UnsignTampered : Prop :=
   ∀ (s : Signer) (k v : Bytes) (i : Nat) (b : UInt8),
     (∃ n, ∀ k' ∈ s.secretKeys, ∀ v', (s.rawSignature k' v').length = n) →
     k ∈ s.secretKeys →
-    (∀ k' ∈ s.secretKeys, ∀ v', v' ≠ v → s.rawSignature k' v' ≠ s.rawSignature k v) →
-    ∀ r, s.unsignImpl ((s.signWith k v).set i b) = .ok r → r = v
+    ∀ r, s.unsignImpl ((s.signWith k v).set i b) = .ok r →
+      r = v ∨ ∃ k' ∈ s.secretKeys, r ≠ v ∧ s.rawSignature k' r = s.rawSignature k v
 
-/-- With one key, changing any one byte makes `unsign` fail. -/
+/-- With one key, changing any one byte makes `unsign` fail, or exhibits an
+explicit collision. -/
 def UnsignTamperedSingle : Prop :=
   ∀ (s : Signer) (k : Bytes), s.secretKeys = [k] → ∀ (v : Bytes) (i : Nat),
     i < (s.signWith k v).length → ∀ b : UInt8, (s.signWith k v)[i]? ≠ some b →
     (∃ n, ∀ v', (s.rawSignature k v').length = n) →
-    (∀ v', v' ≠ v → s.rawSignature k v' ≠ s.rawSignature k v) →
-    ∃ e, s.unsignImpl ((s.signWith k v).set i b) = .error e
+    (∃ e, s.unsignImpl ((s.signWith k v).set i b) = .error e) ∨
+      ∃ v', v' ≠ v ∧ s.rawSignature k v' = s.rawSignature k v
+
+/-- The comparison `unsign` uses is equality. -/
+def CtEqIsEq : Prop := ∀ a b : Bytes, ctEq a b = true ↔ a = b
 
 /-! ## TimestampSigner -/
 

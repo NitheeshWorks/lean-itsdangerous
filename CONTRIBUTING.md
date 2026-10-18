@@ -57,8 +57,11 @@ be a Hoare triple over a heap.
 * `VerifiedSigner`: `unsign_sign`, `unsign_signWith` (key rotation: any key
   in the list), `unsign_sound` (an `ok v` means some listed key signed `v`;
   the refinement `Signer.unsign` returns), `unsign_tampered_value`,
-  `unsign_tampered` (changing one byte never yields a different value) and
-  `unsign_tampered_single` (with one key it fails).
+  `unsign_tampered` (if changing one byte makes `unsign` succeed, it returns
+  the original value or exhibits an explicit collision: a different value
+  with the same raw signature under a listed key), `unsign_tampered_single`
+  (with one key: `unsign` fails, or there is such a collision), and `ctEq_iff`
+  (the signature comparison is equality).
 * `VerifiedTimestampSigner`: round trip with rotation within `max_age`,
   soundness (signed by a listed key, timestamp within the age bound),
   `max_age` monotonicity, expiry.
@@ -66,11 +69,15 @@ be a Hoare triple over a heap.
   (plain and timed) for any codec whose `loads` inverts `dumps`, and
   soundness of both `loads`.
 
-The tampering theorems are about the trusted signing algorithm, so they take
-what they need of it as explicit hypotheses: distinct values give distinct
-raw signatures (the HMAC-outputs-differ hypothesis), and raw signatures have a
-fixed length (discharged for HMAC by `Signer.rawSignature_length_hmac`, from
-the proved `Hash.h_len`).
+The tampering theorems assume nothing about collision resistance, which HMAC
+can never be shown to have (a fixed-length output over an infinite domain has
+collisions). They prove instead that a successful one-byte forgery *is* an
+explicit collision of the signing algorithm, so tamper resistance reduces
+exactly to collision resistance. Their only hypothesis about the algorithm is
+a fixed signature length, discharged for HMAC by
+`Signer.rawSignature_length_hmac` from the proved `Hash.h_len`.
+`unsign_tampered_value` (any value `v'` put in front of `v`'s signature) is
+the same: `unsign` fails, or `v'` collides with `v`.
 
 ### Tested, not proved
 
@@ -83,9 +90,14 @@ Listed here with the reason, and in `docs/traceability.toml` with
   million `a`) in `tests/Props.lean`. Their fixed output length is proved.
 * **HMAC** (`RepoImpl/Hash.lean`): trusted for the same reason. Tested
   against RFC 2202 (HMAC-SHA1) and RFC 4231 cases 1–7 (HMAC-SHA256,
-  HMAC-SHA512), plus seeded properties (long keys are hashed; distinct
-  messages give distinct MACs; flipping a byte of a signed string makes
-  `unsign` fail) in `tests/Props.lean` and `tests/pbt/`.
+  HMAC-SHA512), plus seeded properties (long keys are hashed; a sampled
+  no-collision smoke test on random pairs; flipping a byte of a signed string
+  makes `unsign` fail) in `tests/Props.lean` and `tests/pbt/`.
+* **Key derivations, timestamp signer and URL-safe tokens**: their bytes
+  depend on the trusted hashes, so exact interoperability is checked by
+  known-answer tokens generated from upstream itsdangerous 2.2.0 (every key
+  derivation with SHA-1 and SHA-256, timestamps 0, 255, 256 and 2^32, a custom
+  separator and salt, URL-safe serializers) in `tests/Conformance.lean`.
 
 ### Deviations from upstream
 
@@ -96,10 +108,14 @@ Each is a `status = "deviation"` or `"excluded"` row in
   a substring of the base64 alphabet; here any byte of it in the alphabet
   (or an empty separator) is rejected. This is what makes the split provably
   recover the signature.
-* **Signature comparison** is equality of the canonical base64url encoding,
-  not `hmac.compare_digest` of decoded bytes: the same on every signature
-  upstream emits, rejects the non-canonical spellings Python's lenient
-  decoder accepts, and is not constant-time.
+* **Signature comparison** is `ctEq` on the canonical base64url encoding,
+  where upstream runs `hmac.compare_digest` on decoded bytes. It agrees with
+  upstream on every signature upstream emits and rejects the non-canonical
+  spellings Python's lenient decoder accepts. Like `compare_digest` it
+  checks the length first, then visits every byte pair, ORing their XORs,
+  with no early exit; `ctEq_iff` proves it is equality. Lean's compiler gives
+  no timing guarantee, so constant time is a property of the algorithm, not
+  a promise about the machine code.
 * **No zlib.** URL-safe `dumps` never compresses; `loads` rejects a
   compressed (`.`-prefixed) payload with `BadPayload`.
 * **No built-in JSON.** The payload codec is a parameter (`Codec α`);

@@ -97,6 +97,20 @@ def bytesToNat (bs : Bytes) : Nat := bs.foldl (fun acc b => acc * 256 + b.toNat)
 def bytesToInt (bs : Bytes) : Option UInt64 :=
   if bs.length ≤ 8 then some (UInt64.ofNat (bytesToNat bs)) else none
 
+/-! ## Comparison -/
+
+/-- OR of the XORs of every pair of bytes, onto `acc`. Visits every pair; no
+early exit. -/
+def diffAcc : UInt8 → Bytes → Bytes → UInt8
+  | acc, x :: xs, y :: ys => diffAcc (acc ||| (x ^^^ y)) xs ys
+  | acc, _, _ => acc
+
+/-- Upstream's `hmac.compare_digest`: equal lengths, then one pass over every
+byte pair accumulating differences, compared to zero once at the end. Like
+`compare_digest`, the length is not hidden. Lean's compiler gives no
+timing guarantee, but the comparison is free of data-dependent early exits. -/
+def ctEq (a b : Bytes) : Bool := (a.length == b.length) && (diffAcc 0 a b == 0)
+
 /-! ## Splitting -/
 
 /-- Split at the first occurrence of `pat`: `some (before, after)`. -/
