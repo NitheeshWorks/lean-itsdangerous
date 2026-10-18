@@ -1,4 +1,5 @@
 import LeanItsdangerous.Proofs.Public
+import LeanItsdangerous.Proofs.Bytes
 import LeanItsdangerous.Specifications.Spec
 
 /-!
@@ -28,12 +29,14 @@ structure VerifiedCodec : Prop where
   encodingsLawful : Spec.EncodingsLawful
   urlSafeLawful : Spec.UrlSafeLawful
   base64RoundTrip : Spec.Base64RoundTrip
+  ofStringEqToUTF8 : Spec.OfStringEqToUTF8
 
 theorem theVerifiedCodec : VerifiedCodec where
   lawfulAndThen _ _ _ hi ho := hi.andThen ho
   encodingsLawful := ⟨base64Codec_lawful, intCodec_lawful, timestampCodec_lawful⟩
   urlSafeLawful _ _ h := urlSafeCodec_lawful h
   base64RoundTrip := base64Decode_base64Encode
+  ofStringEqToUTF8 := Bytes.ofString_eq_toUTF8
 
 /-- `Signer`: round trip, key rotation, characterisation, tampering. -/
 structure VerifiedSigner : Prop where

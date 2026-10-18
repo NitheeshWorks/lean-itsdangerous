@@ -1,3 +1,4 @@
+import LeanItsdangerous.Proofs.Bytes
 import LeanItsdangerous.Proofs.Encoding
 import LeanItsdangerous.Proofs.Codec
 import LeanItsdangerous.Proofs.Signer

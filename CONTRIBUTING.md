@@ -67,7 +67,9 @@ about a public function (`Except.val` forgets a refined result's proof):
 
 * `VerifiedCodec`: `Codec.Lawful.andThen`; `base64Codec_lawful`,
   `intCodec_lawful`, `timestampCodec_lawful`; `urlSafeCodec_lawful`;
-  `base64Decode_base64Encode`.
+  `base64Decode_base64Encode`; `Bytes.ofString_eq_toUTF8` (the structural
+  UTF-8 encoder, which the kernel can evaluate on a separator literal, is
+  core's `String.toUTF8` on every string).
 * `VerifiedSigner`: `Signer.unsign_sign`, `Signer.unsign_signWith` (key
   rotation), `Signer.unsign_eq_ok_iff` (`unsign` succeeds exactly on values
   signed with a listed key), `Signer.unsign_tampered_value`,

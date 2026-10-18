@@ -34,6 +34,10 @@ def UrlSafeLawful : Prop := ∀ (α : Type) (c : Codec α), c.Lawful → (urlSaf
 /-- `base64_decode(base64_encode(b)) == b`. -/
 def Base64RoundTrip : Prop := ∀ b : Bytes, base64Decode (base64Encode b) = some b
 
+/-- `want_bytes(s)` is UTF-8: `Bytes.ofString` agrees with Lean core's
+encoder on every string. -/
+def OfStringEqToUTF8 : Prop := ∀ s : String, Bytes.ofString s = s.toUTF8.data.toList
+
 /-! ## Signer -/
 
 /-- `unsign(sign(v)) == v`. -/

@@ -48,6 +48,7 @@ upstream = "tests/test_itsdangerous/test_encoding.py::test_want_bytes"
 title = "text is encoded as UTF-8"
 status = "implemented"
 realises = ["LeanItsdangerous.Bytes.ofString", "LeanItsdangerous.SecretKeys"]
+theorem = ["LeanItsdangerous.Bytes.ofString_eq_toUTF8"]
 test = ["tests/Conformance.lean::test_want_bytes"]
 
 [[requirement]]

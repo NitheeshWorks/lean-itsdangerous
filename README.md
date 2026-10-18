@@ -92,6 +92,7 @@ with its slot in `LeanItsdangerous/Proofs/Verified.lean`:
 | `max_age` is monotone | `TimestampSigner.unsign_maxAge_mono : m ≤ m' → (t.unsign x (some m) now).val = .ok r → (t.unsign x (some m') now).val = .ok r` |
 | Expired signatures raise `SignatureExpired` | `TimestampSigner.unsign_expired` |
 | `loads (dumps x) = x` | `Serializer.loads_dumps : s.codec.Lawful → (s.loads (s.dumps x salt) salt).val = .ok x`, and `TimedSerializer.loads_dumps` |
+| Strings are encoded as UTF-8, exactly as Lean core does | `Bytes.ofString_eq_toUTF8 : Bytes.ofString s = s.toUTF8.data.toList` |
 | The codec law composes | `Codec.Lawful.andThen : inner.Lawful → outer.Lawful → (inner.andThen outer).Lawful` |
 | base64url, integer and timestamp codecs are lawful | `base64Codec_lawful`, `intCodec_lawful`, `timestampCodec_lawful`, `urlSafeCodec_lawful` |
 
