@@ -1,16 +1,17 @@
 import LeanItsdangerous.Proofs.Signer
+import LeanItsdangerous.Proofs.Codec
 import LeanItsdangerous.Specifications.Timed
 
 /-!
 # Proofs: TimestampSigner
 
-* `unsign_signWith` / `unsign_sign`: sign at `ts`, unsign at `now` within
+* `unsignImpl_signWith` / `unsignImpl_sign`: sign at `ts`, unsign at `now` within
   `max_age`, get back the value and `ts`; for any key in the list.
-* `unsign_sound`: an `ok` result is a value signed by a key in the list,
+* `unsignImpl_sound`: an `ok` result is a value signed by a key in the list,
   within the age bound.
-* `unsign_maxAge_mono`, `unsign_none_of_some`: raising `max_age` (or dropping
+* `unsignImpl_maxAge_mono`, `unsignImpl_none_of_some`: raising `max_age` (or dropping
   it) never turns a success into a failure.
-* `unsign_expired`, `unsign_future`: a too-old or future timestamp raises
+* `unsignImpl_expired`, `unsignImpl_future`: a too-old or future timestamp raises
   `SignatureExpired` with the signing date.
 -/
 
@@ -37,29 +38,29 @@ theorem checkAge_eq_none_iff (maxAge : Option Nat) (now : UInt64) (value : Bytes
 
 theorem encodeTimestamp_not_mem_sep (t : TimestampSigner) (ts : UInt64) :
     ∀ c ∈ encodeTimestamp ts, c ∉ t.toSigner.sep :=
-  not_mem_sep_of_mem_b64encode t.toSigner.h_sep
+  not_mem_sep_of_mem_base64Encode t.toSigner.h_sep
 
 theorem unsignCore_signWith (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
-    (ts : UInt64) (v : Bytes) : t.unsignCore (t.signWith k ts v) = .ok (v, ts) := by
-  simp only [unsignCore, signWith, t.toSigner.unsign_signWith hk,
+    (ts : UInt64) (v : Bytes) : t.unsignCore (t.signWith k v ts) = .ok (v, ts) := by
+  simp only [unsignCore, signWith, t.toSigner.unsignImpl_signWith hk,
     rsplit_append t.toSigner.h_sep.1 (t.encodeTimestamp_not_mem_sep ts),
     decodeTimestamp_encodeTimestamp]
 
 /-- Key rotation for timestamp signatures: signed by any key in the list at
 `ts`, unsigned at `now` within `max_age`, the value and timestamp come back. -/
-theorem unsign_signWith (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
+theorem unsignImpl_signWith (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {maxAge : Option Nat} {now ts : UInt64} (hage : AgeOk maxAge now ts) (v : Bytes) :
-    t.unsignImpl maxAge now (t.signWith k ts v) = .ok (v, ts) := by
+    t.unsignImpl maxAge now (t.signWith k v ts) = .ok (v, ts) := by
   simp only [unsignImpl, t.unsignCore_signWith hk, (checkAge_eq_none_iff _ _ _ _).mpr hage]
 
 theorem sign_eq_signWith (t : TimestampSigner) (ts : UInt64) (v : Bytes) :
-    t.sign ts v = t.signWith t.toSigner.secretKey ts v := rfl
+    t.sign v ts = t.signWith t.toSigner.secretKey v ts := rfl
 
 /-- The timestamp round trip through the signer. -/
-theorem unsign_sign (t : TimestampSigner) {maxAge : Option Nat} {now ts : UInt64}
+theorem unsignImpl_sign (t : TimestampSigner) {maxAge : Option Nat} {now ts : UInt64}
     (hage : AgeOk maxAge now ts) (v : Bytes) :
-    t.unsignImpl maxAge now (t.sign ts v) = .ok (v, ts) :=
-  t.unsign_signWith t.toSigner.secretKey_mem hage v
+    t.unsignImpl maxAge now (t.sign v ts) = .ok (v, ts) :=
+  t.unsignImpl_signWith t.toSigner.secretKey_mem hage v
 
 theorem unsignImpl_ok_iff (t : TimestampSigner) (maxAge : Option Nat) (now : UInt64)
     (input : Bytes) (r : Bytes × UInt64) :
@@ -97,13 +98,13 @@ theorem unsignCore_sound {t : TimestampSigner} {input : Bytes} {r : Bytes × UIn
       · cases h
       · rename_i ts hts
         cases h
-        obtain ⟨k, hk, hw⟩ := Signer.unsign_sound hu
+        obtain ⟨k, hk, hw⟩ := Signer.unsignImpl_sound hu
         refine ⟨k, hk, tsb, hts, ?_⟩
         rw [← rsplit_sound hsplit, hw]
 
 /-- Soundness: an `ok (v, ts)` from `unsign` is `v` signed by a key in the
 list at `ts`, and `ts` passes the age check. -/
-theorem unsign_sound {t : TimestampSigner} {maxAge : Option Nat} {now : UInt64} {input : Bytes}
+theorem unsignImpl_sound {t : TimestampSigner} {maxAge : Option Nat} {now : UInt64} {input : Bytes}
     {r : Bytes × UInt64} (h : t.unsignImpl maxAge now input = .ok r) :
     t.SignedBy input r.1 r.2 ∧ AgeOk maxAge now r.2 := by
   obtain ⟨hc, ha⟩ := (t.unsignImpl_ok_iff _ _ _ _).mp h
@@ -111,7 +112,7 @@ theorem unsign_sound {t : TimestampSigner} {maxAge : Option Nat} {now : UInt64} 
 
 /-- `max_age` monotonicity: a signature accepted with `max_age = m` is
 accepted, with the same result, with any `m' ≥ m`. -/
-theorem unsign_maxAge_mono (t : TimestampSigner) {m m' : Nat} (hm : m ≤ m') (now : UInt64)
+theorem unsignImpl_maxAge_mono (t : TimestampSigner) {m m' : Nat} (hm : m ≤ m') (now : UInt64)
     (input : Bytes) (r : Bytes × UInt64) (h : t.unsignImpl (some m) now input = .ok r) :
     t.unsignImpl (some m') now input = .ok r := by
   obtain ⟨hc, ha⟩ := (t.unsignImpl_ok_iff _ _ _ _).mp h
@@ -122,7 +123,7 @@ theorem unsign_maxAge_mono (t : TimestampSigner) {m m' : Nat} (hm : m ≤ m') (n
   omega
 
 /-- No `max_age` is the weakest check. -/
-theorem unsign_none_of_some (t : TimestampSigner) {m : Nat} (now now' : UInt64) (input : Bytes)
+theorem unsignImpl_none_of_some (t : TimestampSigner) {m : Nat} (now now' : UInt64) (input : Bytes)
     (r : Bytes × UInt64) (h : t.unsignImpl (some m) now input = .ok r) :
     t.unsignImpl none now' input = .ok r := by
   obtain ⟨hc, _⟩ := (t.unsignImpl_ok_iff _ _ _ _).mp h
@@ -130,9 +131,9 @@ theorem unsign_none_of_some (t : TimestampSigner) {m : Nat} (now now' : UInt64) 
 
 /-- A signature older than `max_age` raises `SignatureExpired`, carrying the
 value and the signing time. -/
-theorem unsign_expired (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
+theorem unsignImpl_expired (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {m : Nat} {now ts : UInt64} (hold : ts.toNat + m < now.toNat) (v : Bytes) :
-    ∃ msg, t.unsignImpl (some m) now (t.signWith k ts v) =
+    ∃ msg, t.unsignImpl (some m) now (t.signWith k v ts) =
       .error (.signatureExpired msg (some v) (some ts.toNat)) := by
   unfold unsignImpl
   rw [t.unsignCore_signWith hk]
@@ -141,9 +142,9 @@ theorem unsign_expired (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.
 
 /-- A signature from the future raises `SignatureExpired` whenever an age is
 checked. -/
-theorem unsign_future (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
+theorem unsignImpl_future (t : TimestampSigner) {k : Bytes} (hk : k ∈ t.toSigner.secretKeys)
     {m : Nat} {now ts : UInt64} (hfut : now.toNat < ts.toNat) (v : Bytes) :
-    ∃ msg, t.unsignImpl (some m) now (t.signWith k ts v) =
+    ∃ msg, t.unsignImpl (some m) now (t.signWith k v ts) =
       .error (.signatureExpired msg (some v) (some ts.toNat)) := by
   unfold unsignImpl
   rw [t.unsignCore_signWith hk]

@@ -12,14 +12,28 @@ to bytes:
 
 | Directory | Holds | Proved? |
 |---|---|---|
-| `DataTypes/` | structures and inductives; invariants are fields | n/a |
-| `RepoImpl/` | executable definitions; total, structural recursion | subject of proofs |
-| `Specifications/` | the properties, in `Prop` | the contract |
-| `Proofs/` | theorems; `Proofs/Verified.lean` bundles one `Verified<Layer>` per layer | yes |
-| `APIs/` | the public surface, returning refinements | by construction |
-| `Transport.lean` (if present) | the only effectful module | no; tested (none here: the library is pure) |
+| `DataTypes/` | structures and inductives; invariants are fields; the `Codec` class and its law | n/a |
+| `RepoImpl/` | executable definitions (`*Impl` for the decoders); total, structural recursion | subject of proofs |
+| `Specifications/Timed.lean`, `Serializer.lean` | the predicates the refined results carry (`SignedBy`, `AgeOk`) | the contract |
+| `Proofs/` (all but `Public`, `Verified`) | lemmas about the implementation (`unsignImpl_*`, `loadsImpl_*`) and the codec theory | yes |
+| `APIs/` | the public surface, shaped like itsdangerous, returning refinements | by construction |
+| `Specifications/Spec.lean` | the headline properties, stated about the public functions | the contract |
+| `Proofs/Public.lean` | the headline theorems; `Proofs/Verified.lean` bundles one `Verified<Layer>` per layer | yes |
+| `Clock.lean` | the only effectful module: `getTimestamp` reads the wall clock | no; one line over `Std.Time` |
 
-Everything except the transport module is a pure function. This is
+The public decoders need the implementation's soundness lemmas to build their
+refinements, and the headline theorems are stated about the public
+decoders, which is why the headline specification and proofs sit above
+`APIs/`.
+
+The codec theory (`DataTypes/Codec.lean`, `Proofs/Codec.lean`) is the
+general lemma behind every round trip: `Codec.Lawful.andThen` is proved once,
+and the base64url, integer, timestamp and URL-safe payload codecs are
+instances. It is shaped to move into the shared theory library (STYLE.md
+section 2) unchanged; tokens are separator-delimited, so the law is the
+whole-buffer form and the separator split is the lemma `rsplit_append`.
+
+Everything except `Clock.lean` is a pure function. This is
 load-bearing: a round-trip property of a function is an equation that
 `omega` and `simp` attack directly; the same property of a procedure would
 be a Hoare triple over a heap.
@@ -48,26 +62,27 @@ be a Hoare triple over a heap.
 ### What is proved
 
 `Proofs/Verified.lean` has one slot per headline property of
-`Specifications/Spec.lean`, in four bundles:
+`Specifications/Spec.lean`, in four bundles. Each is an equation or an `↔`
+about a public function (`Except.val` forgets a refined result's proof):
 
-* `VerifiedEncoding`: `b64decode_b64encode` (base64url round trip, also
-  through the padding-tolerant `base64Decode`), `bytesToInt_intToBytes`,
-  `decodeTimestamp_encodeTimestamp`, and base64url output never containing a
-  separator byte.
-* `VerifiedSigner`: `unsign_sign`, `unsign_signWith` (key rotation: any key
-  in the list), `unsign_sound` (an `ok v` means some listed key signed `v`;
-  the refinement `Signer.unsign` returns), `unsign_tampered_value`,
-  `unsign_tampered` (if changing one byte makes `unsign` succeed, it returns
-  the original value or exhibits an explicit collision: a different value
-  with the same raw signature under a listed key), `unsign_tampered_single`
-  (with one key: `unsign` fails, or there is such a collision), and `ctEq_iff`
-  (the signature comparison is equality).
-* `VerifiedTimestampSigner`: round trip with rotation within `max_age`,
-  soundness (signed by a listed key, timestamp within the age bound),
-  `max_age` monotonicity, expiry.
-* `VerifiedSerializer`: URL-safe codec round trip, `loads (dumps x) = x`
-  (plain and timed) for any codec whose `loads` inverts `dumps`, and
-  soundness of both `loads`.
+* `VerifiedCodec`: `Codec.Lawful.andThen`; `base64Codec_lawful`,
+  `intCodec_lawful`, `timestampCodec_lawful`; `urlSafeCodec_lawful`;
+  `base64Decode_base64Encode`.
+* `VerifiedSigner`: `Signer.unsign_sign`, `Signer.unsign_signWith` (key
+  rotation), `Signer.unsign_eq_ok_iff` (`unsign` succeeds exactly on values
+  signed with a listed key), `Signer.unsign_tampered_value`,
+  `Signer.unsign_tampered` (a one-byte change that still unsigns returns the
+  original value or exhibits an explicit collision: a different value with
+  the same raw signature under a listed key), `Signer.unsign_tampered_single`
+  (with one key: `unsign` fails, or there is such a collision), `ctEq_iff`.
+* `VerifiedTimestampSigner`: `TimestampSigner.unsign_sign` (with rotation)
+  within `max_age`, `unsign_maxAge_mono`, `unsign_expired`.
+* `VerifiedSerializer`: `Serializer.loads_dumps` and
+  `TimedSerializer.loads_dumps` for any lawful payload codec.
+
+Soundness of `unsign` and `loads` has no slot because it is the type: each
+returns `{r // P r}`. `Signer.session_sign_verify` is the plan's name for
+`Signer.unsign_sign`.
 
 The tampering theorems assume nothing about collision resistance, which HMAC
 can never be shown to have (a fixed-length output over an infinite domain has
@@ -107,7 +122,9 @@ Each is a `status = "deviation"` or `"excluded"` row in
 * **Separator check is stricter.** Upstream rejects a separator only if it is
   a substring of the base64 alphabet; here any byte of it in the alphabet
   (or an empty separator) is rejected. This is what makes the split provably
-  recover the signature.
+  recover the signature. A separator literal is checked at compile time
+  (`by decide`) instead of raising `ValueError`; `checkSeparator` checks one
+  known only at run time.
 * **Signature comparison** is `ctEq` on the canonical base64url encoding,
   where upstream runs `hmac.compare_digest` on decoded bytes. It agrees with
   upstream on every signature upstream emits and rejects the non-canonical
@@ -118,10 +135,13 @@ Each is a `status = "deviation"` or `"excluded"` row in
   a promise about the machine code.
 * **No zlib.** URL-safe `dumps` never compresses; `loads` rejects a
   compressed (`.`-prefixed) payload with `BadPayload`.
-* **No built-in JSON.** The payload codec is a parameter (`Codec α`);
-  lean-starlette plugs in lean-json.
-* **Time is explicit** (`now : UInt64`, seconds since the epoch) and
-  timestamps are returned as seconds, not `datetime`. `max_age` is a `Nat`.
+* **No built-in JSON.** The payload codec is a class (`Codec α`), found by
+  type as upstream finds `json` by default; `String` (UTF-8 text) and
+  `Bytes` instances are built in, and lean-json provides `Json`.
+* **Time is explicit** (`now : UInt64`, seconds since the epoch, the last
+  argument of `sign`/`dumps`/`unsign`/`loads`); `getTimestamp` reads the
+  clock, as upstream's `get_timestamp`. Timestamps are returned as seconds,
+  not `datetime`. `max_age` is a `Nat`.
 * **base64 decoding** rejects bytes outside the alphabet, where Python's
   non-validating decoder skips them; trailing `=` is accepted as upstream.
 * **MD5 is not provided** (SHA-1, SHA-256, SHA-512, or any `Hash`).

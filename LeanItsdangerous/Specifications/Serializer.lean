@@ -7,10 +7,6 @@ import LeanItsdangerous.Specifications.Timed
 
 namespace LeanItsdangerous
 
-/-- A codec whose `loads` inverts `dumps`: the hypothesis every serializer
-round trip needs of the caller's payload format. -/
-def Codec.RoundTrip {α : Type} (c : Codec α) : Prop := ∀ x, c.loads (c.dumps x) = .ok x
-
 /-- `input` is a payload `p` signed by one of the serializer's unsigners
 (with one of its keys), and the payload loads to `x`. -/
 def Serializer.SignedBy {α : Type} (s : Serializer α) (salt : Option Bytes) (input : Bytes)

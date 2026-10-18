@@ -3,7 +3,7 @@ import LeanItsdangerous.DataTypes.Bytes
 /-!
 # The URL-safe base64 alphabet
 
-`A-Z a-z 0-9 - _`, the alphabet of `base64.urlsafe_b64encode`, as a pair of
+`A-Z a-z 0-9 - _`, the alphabet of `base64.urlsafe_base64Encode`, as a pair of
 arithmetic maps between a 6-bit index and its byte. Defining them by
 arithmetic rather than by table lookup is what lets `decide` check
 `decChar (encChar i) = some i` for all 64 indices at once, and `omega` reason

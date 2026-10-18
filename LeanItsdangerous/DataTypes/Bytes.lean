@@ -13,8 +13,22 @@ namespace LeanItsdangerous
 this library is an induction over it. -/
 abbrev Bytes := List UInt8
 
-/-- UTF-8 encoding of a string: upstream's `want_bytes(s)`. -/
-def Bytes.ofString (s : String) : Bytes := s.toUTF8.toList
+/-- UTF-8 encoding of one code point. -/
+def utf8Char (c : Char) : Bytes :=
+  let n := c.toNat
+  if n < 0x80 then [UInt8.ofNat n]
+  else if n < 0x800 then [UInt8.ofNat (0xC0 + n / 64), UInt8.ofNat (0x80 + n % 64)]
+  else if n < 0x10000 then
+    [UInt8.ofNat (0xE0 + n / 4096), UInt8.ofNat (0x80 + n / 64 % 64), UInt8.ofNat (0x80 + n % 64)]
+  else
+    [UInt8.ofNat (0xF0 + n / 262144), UInt8.ofNat (0x80 + n / 4096 % 64),
+     UInt8.ofNat (0x80 + n / 64 % 64), UInt8.ofNat (0x80 + n % 64)]
+
+/-- UTF-8 encoding of a string: upstream's `want_bytes(s)`. Written by
+structural recursion over the characters (it agrees with `String.toUTF8`,
+checked in `tests/Props.lean`) so that the kernel can evaluate it on a
+literal: `decide` can then check a separator such as `"|"` at compile time. -/
+def Bytes.ofString (s : String) : Bytes := s.toList.flatMap utf8Char
 
 /-- UTF-8 decoding, failing on invalid UTF-8. -/
 def Bytes.toString? (b : Bytes) : Option String := String.fromUTF8? ⟨b.toArray⟩
@@ -40,5 +54,12 @@ def Bytes.pyRepr (b : Bytes) : String :=
   "b'" ++ String.ofList body ++ "'"
 
 instance : ToString Bytes := ⟨Bytes.pyRepr⟩
+
+/-- With `open LeanItsdangerous`, a string literal is accepted wherever bytes
+are, as upstream accepts `str` wherever it accepts `bytes`. -/
+scoped instance : Coe String Bytes := ⟨Bytes.ofString⟩
+
+/-- With `open LeanItsdangerous`, bytes print as Python's `b'...'`. -/
+scoped instance (priority := high) : Repr Bytes := ⟨fun b _ => .text b.pyRepr⟩
 
 end LeanItsdangerous

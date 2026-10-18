@@ -20,19 +20,19 @@ example : ∀ (k m : List UInt8), (hmac sha256 k m).length = 32 := by plausible
 /-- HMAC-SHA1 has no collision on sampled pairs (a smoke test; it cannot test a for-all). -/
 example : ∀ (k m₁ m₂ : List UInt8), m₁ ≠ m₂ → hmac sha1 k m₁ ≠ hmac sha1 k m₂ := by plausible
 
-/-- base64url round trip (proved as `b64decode_b64encode`). -/
-example : ∀ (m : List UInt8), b64decode (b64encode m) = some m := by plausible
+/-- base64url round trip (proved as `b64decode_base64Encode`). -/
+example : ∀ (m : List UInt8), b64decode (base64Encode m) = some m := by plausible
 
-/-- Encoded length is `⌈4n/3⌉` (proved as `length_b64encode`). -/
-example : ∀ (m : List UInt8), (b64encode m).length = (4 * m.length + 2) / 3 := by plausible
+/-- Encoded length is `⌈4n/3⌉` (proved as `length_base64Encode`). -/
+example : ∀ (m : List UInt8), (base64Encode m).length = (4 * m.length + 2) / 3 := by plausible
 
 /-- Signing and unsigning with the default signer (proved as `unsign_sign`). -/
 example : ∀ (k v : List UInt8),
-    ((Signer.ofKey k).unsignImpl ((Signer.ofKey k).sign v)).toOption = some v := by plausible
+    ((Signer.new k).unsignImpl ((Signer.new k).sign v)).toOption = some v := by plausible
 
 /-- A different key does not verify. -/
 example : ∀ (k₁ k₂ v : List UInt8), k₁ ≠ k₂ →
-    (Signer.ofKey k₂).validate ((Signer.ofKey k₁).sign v) = false := by plausible
+    (Signer.new k₂).validate ((Signer.new k₁).sign v) = false := by plausible
 
 /-- Timestamp round trip (proved as `decodeTimestamp_encodeTimestamp`). -/
 example : ∀ (n : Nat),

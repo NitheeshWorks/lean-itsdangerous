@@ -3,7 +3,7 @@ import LeanItsdangerous.RepoImpl.Signer
 /-!
 # Proofs: base64url, integer bytes, splitting
 
-The round trips (`b64decode_b64encode`, `bytesToInt_intToBytes`,
+The round trips (`b64decode_base64Encode`, `bytesToInt_intToBytes`,
 `decodeTimestamp_encodeTimestamp`), the facts about the encoder's output the
 signer proofs need (alphabet only, length a function of input length,
 injective), and the two directions of `rsplit`.
@@ -37,68 +37,65 @@ theorem encChar_ne_eq (n : Nat) : encChar n ≠ 61 := by
 private theorem ofNat_eq {a : UInt8} {x : Nat} (h : x = a.toNat) : UInt8.ofNat x = a := by
   subst h; exact UInt8.ofNat_toNat
 
-theorem b64decode_b64encode (bs : Bytes) : b64decode (b64encode bs) = some bs := by
-  induction bs using b64encode.induct with
+theorem b64decode_base64Encode (bs : Bytes) : b64decode (base64Encode bs) = some bs := by
+  induction bs using base64Encode.induct with
   | case1 a b c rest ih =>
     have ha := a.toNat_lt; have hb := b.toNat_lt; have hc := c.toNat_lt
-    simp only [b64encode, enc3, List.cons_append, List.nil_append, b64decode, dec4,
+    simp only [base64Encode, enc3, List.cons_append, List.nil_append, b64decode, dec4,
       decChar_encChar, ih, Option.bind_eq_bind, Option.pure_def, Option.bind_some]
     simp only [Option.some.injEq, List.cons.injEq]
     refine ⟨ofNat_eq ?_, ofNat_eq ?_, ofNat_eq ?_, trivial⟩ <;> omega
   | case2 a b =>
     have ha := a.toNat_lt; have hb := b.toNat_lt
-    simp only [b64encode, enc2, b64decode, dec3, decChar_encChar, Option.bind_eq_bind,
+    simp only [base64Encode, enc2, b64decode, dec3, decChar_encChar, Option.bind_eq_bind,
       Option.pure_def, Option.bind_some]
     simp only [Option.some.injEq, List.cons.injEq]
     refine ⟨ofNat_eq ?_, ofNat_eq ?_, trivial⟩ <;> omega
   | case3 a =>
     have ha := a.toNat_lt
-    simp only [b64encode, enc1, b64decode, dec2, decChar_encChar, Option.bind_eq_bind,
+    simp only [base64Encode, enc1, b64decode, dec2, decChar_encChar, Option.bind_eq_bind,
       Option.pure_def, Option.bind_some]
     simp only [Option.some.injEq, List.cons.injEq]
     refine ⟨ofNat_eq ?_, trivial⟩; omega
   | case4 => rfl
 
-/-- Every byte of an encoding is in the base64url alphabet. -/
-theorem isAlphabet_of_mem_b64encode {bs : Bytes} {c : UInt8} (h : c ∈ b64encode bs) :
-    isAlphabet c = true := by
-  induction bs using b64encode.induct with
+/-- Every byte of an encoding is an alphabet character `encChar n`: the one
+fact about the encoder's output that the alphabet and padding lemmas below
+are instances of. -/
+theorem exists_encChar_of_mem_base64Encode {bs : Bytes} {c : UInt8} (h : c ∈ base64Encode bs) :
+    ∃ n, c = encChar n := by
+  induction bs using base64Encode.induct with
   | case1 a b d rest ih =>
-    simp only [b64encode, enc3, List.cons_append, List.nil_append, List.mem_cons] at h
-    rcases h with h | h | h | h | h <;> first | (subst h; exact isAlphabet_encChar _) | exact ih h
+    simp only [base64Encode, enc3, List.cons_append, List.nil_append, List.mem_cons] at h
+    rcases h with h | h | h | h | h <;> first | exact ⟨_, h⟩ | exact ih h
   | case2 a b =>
-    simp only [b64encode, enc2, List.mem_cons, List.not_mem_nil, or_false] at h
-    rcases h with h | h | h <;> (subst h; exact isAlphabet_encChar _)
+    simp only [base64Encode, enc2, List.mem_cons, List.not_mem_nil, or_false] at h
+    rcases h with h | h | h <;> exact ⟨_, h⟩
   | case3 a =>
-    simp only [b64encode, enc1, List.mem_cons, List.not_mem_nil, or_false] at h
-    rcases h with h | h <;> (subst h; exact isAlphabet_encChar _)
-  | case4 => simp [b64encode] at h
+    simp only [base64Encode, enc1, List.mem_cons, List.not_mem_nil, or_false] at h
+    rcases h with h | h <;> exact ⟨_, h⟩
+  | case4 => simp [base64Encode] at h
+
+/-- Every byte of an encoding is in the base64url alphabet. -/
+theorem isAlphabet_of_mem_base64Encode {bs : Bytes} {c : UInt8} (h : c ∈ base64Encode bs) :
+    isAlphabet c = true := by
+  obtain ⟨n, rfl⟩ := exists_encChar_of_mem_base64Encode h; exact isAlphabet_encChar n
 
 /-- No `=` in an encoding. -/
-theorem ne_eq_of_mem_b64encode {bs : Bytes} {c : UInt8} (h : c ∈ b64encode bs) : c ≠ 61 := by
-  induction bs using b64encode.induct with
-  | case1 a b d rest ih =>
-    simp only [b64encode, enc3, List.cons_append, List.nil_append, List.mem_cons] at h
-    rcases h with h | h | h | h | h <;> first | (subst h; exact encChar_ne_eq _) | exact ih h
-  | case2 a b =>
-    simp only [b64encode, enc2, List.mem_cons, List.not_mem_nil, or_false] at h
-    rcases h with h | h | h <;> (subst h; exact encChar_ne_eq _)
-  | case3 a =>
-    simp only [b64encode, enc1, List.mem_cons, List.not_mem_nil, or_false] at h
-    rcases h with h | h <;> (subst h; exact encChar_ne_eq _)
-  | case4 => simp [b64encode] at h
+theorem ne_eq_of_mem_base64Encode {bs : Bytes} {c : UInt8} (h : c ∈ base64Encode bs) : c ≠ 61 := by
+  obtain ⟨n, rfl⟩ := exists_encChar_of_mem_base64Encode h; exact encChar_ne_eq n
 
 /-- The encoding's length depends only on the input's: `⌈4n/3⌉`. -/
-theorem length_b64encode (bs : Bytes) : (b64encode bs).length = (4 * bs.length + 2) / 3 := by
-  induction bs using b64encode.induct with
-  | case1 a b c rest ih => simp [b64encode, enc3, ih]; omega
-  | case2 a b => simp [b64encode, enc2]
-  | case3 a => simp [b64encode, enc1]
+theorem length_base64Encode (bs : Bytes) : (base64Encode bs).length = (4 * bs.length + 2) / 3 := by
+  induction bs using base64Encode.induct with
+  | case1 a b c rest ih => simp [base64Encode, enc3, ih]; omega
+  | case2 a b => simp [base64Encode, enc2]
+  | case3 a => simp [base64Encode, enc1]
   | case4 => rfl
 
-theorem b64encode_injective {a b : Bytes} (h : b64encode a = b64encode b) : a = b := by
-  have := b64decode_b64encode a
-  rw [h, b64decode_b64encode] at this
+theorem base64Encode_injective {a b : Bytes} (h : base64Encode a = base64Encode b) : a = b := by
+  have := b64decode_base64Encode a
+  rw [h, b64decode_base64Encode] at this
   exact (Option.some.inj this).symm
 
 theorem stripPadding_of_no_eq {s : Bytes} (h : ∀ c ∈ s, c ≠ 61) : stripPadding s = s := by
@@ -109,9 +106,9 @@ theorem stripPadding_of_no_eq {s : Bytes} (h : ∀ c ∈ s, c ≠ 61) : stripPad
     have hx : x ≠ 61 := h x (by rw [← List.mem_reverse, hr]; simp)
     rw [List.dropWhile_cons_of_neg (by simpa using hx), ← hr, List.reverse_reverse]
 
-theorem base64Decode_b64encode (bs : Bytes) : base64Decode (b64encode bs) = some bs := by
+theorem base64Decode_base64Encode (bs : Bytes) : base64Decode (base64Encode bs) = some bs := by
   unfold base64Decode
-  rw [stripPadding_of_no_eq (fun _ h => ne_eq_of_mem_b64encode h), b64decode_b64encode]
+  rw [stripPadding_of_no_eq (fun _ h => ne_eq_of_mem_base64Encode h), b64decode_base64Encode]
 
 /-! ## Integers as bytes -/
 
@@ -143,12 +140,6 @@ theorem bytesToInt_intToBytes (n : UInt64) : bytesToInt (intToBytes n) = some n 
   have hlen : (intToBytes n).length ≤ 8 := length_natToBytes_le 8 _ n.toNat_lt
   unfold intToBytes at hlen
   simp only [bytesToInt, intToBytes, hlen, ite_true, bytesToNat_natToBytes, UInt64.ofNat_toNat]
-
-/-- The timestamp encode/decode round trip. -/
-theorem decodeTimestamp_encodeTimestamp (ts : UInt64) :
-    TimestampSigner.decodeTimestamp (TimestampSigner.encodeTimestamp ts) = some ts := by
-  simp [TimestampSigner.decodeTimestamp, TimestampSigner.encodeTimestamp,
-    base64Decode_b64encode, bytesToInt_intToBytes]
 
 /-! ## Comparison -/
 
@@ -243,10 +234,10 @@ theorem rsplit_append {sep v s : Bytes} (hsep : sep ≠ []) (hs : ∀ c ∈ s, c
   simp
 
 /-- Base64url output never contains a byte of a valid separator. -/
-theorem not_mem_sep_of_mem_b64encode {sep bs : Bytes} (hsep : ValidSep sep) :
-    ∀ c ∈ b64encode bs, c ∉ sep := by
+theorem not_mem_sep_of_mem_base64Encode {sep bs : Bytes} (hsep : ValidSep sep) :
+    ∀ c ∈ base64Encode bs, c ∉ sep := by
   intro c hc hcs
-  have h1 := isAlphabet_of_mem_b64encode hc
+  have h1 := isAlphabet_of_mem_base64Encode hc
   have h2 := hsep.2 c hcs
   rw [h1] at h2; exact absurd h2 (by decide)
 

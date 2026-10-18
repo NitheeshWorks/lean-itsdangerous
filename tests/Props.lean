@@ -142,9 +142,30 @@ def rfcVectors : List Property := [
      "b6022cac3c4982b10d5eeb55c3e4de15134676fb6de0446065c97440fa8c6a58")
 ]
 
-def signer : Signer := Signer.ofKeys [b "old-key", b "secret-key"] (by simp)
+def signer : Signer := Signer.new ["old-key", "secret-key"]
+
+/-- A random string mixing ASCII, two-, three- and four-byte code points. -/
+def Rng.string (r : Rng) (maxLen : Nat) : String × Rng := Id.run do
+  let (n, r) := r.nat (maxLen + 1)
+  let mut r := r
+  let mut out : List Char := []
+  for _ in [0:n] do
+    let (kind, r1) := r.nat 4
+    let (x, r2) := r1.nat 0x10000
+    r := r2
+    let cp := match kind with
+      | 0 => x % 0x80
+      | 1 => 0x80 + x % 0x780
+      | 2 => let y := 0x800 + x % 0xF800; if 0xD800 ≤ y ∧ y < 0xE000 then 0x41 else y
+      | _ => 0x10000 + x * 16
+    out := Char.ofNat cp :: out
+  return (String.ofList out, r)
 
 def randomProps : List Property := [
+  { name := "Bytes.ofString (structural UTF-8) agrees with String.toUTF8"
+    check := fun r =>
+      let (str, r) := r.string 40
+      ((if Bytes.ofString str == str.toUTF8.toList then none else some (repr str).pretty), r) },
   { name := "hash output lengths are fixed (sha1/sha256/sha512)"
     check := fun r =>
       let (m, r) := r.bytes 300
@@ -166,7 +187,7 @@ def randomProps : List Property := [
   { name := "base64url round trip (smoke test of a proved property)"
     check := fun r =>
       let (m, r) := r.bytes 100
-      ((if b64decode (b64encode m) == some m then none else some m.toHex), r) },
+      ((if b64decode (base64Encode m) == some m then none else some m.toHex), r) },
   { name := "unsign (sign v) = v with HMAC-SHA1 (smoke test of a proved property)"
     check := fun r =>
       let (v, r) := r.bytes 80
@@ -190,7 +211,7 @@ def randomProps : List Property := [
       let (age, r) := r.nat 100
       let t : TimestampSigner := ⟨signer⟩
       let now := UInt64.ofNat (ts + age)
-      ((match t.unsignImpl (some 100) now (t.sign (UInt64.ofNat ts) v) with
+      ((match t.unsignImpl (some 100) now (t.sign v (UInt64.ofNat ts)) with
         | .ok (w, ts') => if w == v && ts'.toNat == ts then none else some v.toHex
         | .error e => some e.message), r) }
 ]

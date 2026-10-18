@@ -20,16 +20,20 @@ namespace LeanItsdangerous
 /-- Upstream's default signer salt, used when a serializer's salt is `None`. -/
 def defaultSignerSalt : Bytes := Bytes.ofString "itsdangerous.Signer"
 
+/-- The URL-safe payload wrapping: base64url; a leading `.` marks a
+zlib-compressed payload, which is not supported. -/
+def urlSafeLoads (p : Bytes) : Except String Bytes :=
+  match p with
+  | 46 :: _ => .error "zlib-compressed payloads are not supported"
+  | _ => match base64Decode p with
+    | some json => .ok json
+    | none => .error "Could not base64 decode the payload"
+
+/-- base64url payloads, rejecting the compressed form. -/
+@[instance_reducible] def urlSafeBase64 : Codec Bytes := ⟨base64Encode, urlSafeLoads⟩
+
 /-- `URLSafeSerializerMixin`'s payload handling around a codec. -/
-def urlSafeCodec {α : Type} (c : Codec α) : Codec α where
-  dumps x := b64encode (c.dumps x)
-  loads p :=
-    match p with
-    | 46 :: _ => .error "zlib-compressed payloads are not supported"
-    | _ =>
-      match base64Decode p with
-      | none => .error "Could not base64 decode the payload"
-      | some json => c.loads json
+@[instance_reducible] def urlSafeCodec {α : Type} (c : Codec α) : Codec α := c.andThen urlSafeBase64
 
 namespace Serializer
 
@@ -107,8 +111,8 @@ def makeSigner (s : TimedSerializer α) (salt : Option Bytes := none) : Timestam
   ⟨s.toSerializer.makeSigner salt⟩
 
 /-- `dumps(obj, salt)` at time `now`. -/
-def dumps (s : TimedSerializer α) (now : UInt64) (x : α) (salt : Option Bytes := none) : Bytes :=
-  (s.makeSigner salt).sign now (s.toSerializer.dumpPayload x)
+def dumps (s : TimedSerializer α) (x : α) (now : UInt64) (salt : Option Bytes := none) : Bytes :=
+  (s.makeSigner salt).sign (s.toSerializer.dumpPayload x) now
 
 /-- The timed `loads` loop: like `Serializer.loadsWith`, but a
 `SignatureExpired` stops the search (the signature was good, only old). -/

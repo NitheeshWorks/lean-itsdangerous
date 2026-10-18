@@ -1,6 +1,7 @@
 import LeanItsdangerous.DataTypes.Alphabet
 import LeanItsdangerous.DataTypes.Errors
 import LeanItsdangerous.DataTypes.Hash
+import LeanItsdangerous.DataTypes.Codec
 
 /-!
 # Signer and serializer configuration
@@ -50,14 +51,6 @@ structure Signer extends SignerConfig where
 and whose `unsign` can check its age. -/
 structure TimestampSigner where
   toSigner : Signer
-
-/-- The `serializer` object upstream passes to a `Serializer`: a pair of
-`dumps`/`loads`. Kept abstract so the JSON codec (lean-json) can be plugged
-in by the caller. `loads` reports failure as a message, which becomes the
-`original_error` of a `BadPayload`. -/
-structure Codec (α : Type) where
-  dumps : α → Bytes
-  loads : Bytes → Except String α
 
 /-- Upstream's `Serializer`. `salt = none` means the signer's own default
 (`b"itsdangerous.Signer"`), as upstream's `salt=None` does. -/

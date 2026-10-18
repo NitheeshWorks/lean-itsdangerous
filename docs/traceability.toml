@@ -21,8 +21,8 @@ id = "encoding.base64"
 upstream = "tests/test_itsdangerous/test_encoding.py::test_base64"
 title = "base64url encode without padding; decode inverts encode"
 status = "implemented"
-realises = ["LeanItsdangerous.b64encode", "LeanItsdangerous.b64decode", "LeanItsdangerous.base64Decode"]
-theorem = ["LeanItsdangerous.b64decode_b64encode", "LeanItsdangerous.base64Decode_b64encode", "LeanItsdangerous.length_b64encode", "LeanItsdangerous.b64encode_injective"]
+realises = ["LeanItsdangerous.base64Encode", "LeanItsdangerous.b64decode", "LeanItsdangerous.base64Decode"]
+theorem = ["LeanItsdangerous.Codec.Lawful.andThen", "LeanItsdangerous.base64Codec_lawful", "LeanItsdangerous.b64decode_base64Encode", "LeanItsdangerous.base64Decode_base64Encode", "LeanItsdangerous.length_base64Encode", "LeanItsdangerous.base64Encode_injective"]
 test = ["tests/Conformance.lean::test_base64", "tests/Props.lean"]
 
 [[requirement]]
@@ -39,7 +39,7 @@ upstream = "tests/test_itsdangerous/test_encoding.py::test_int_bytes"
 title = "int_to_bytes / bytes_to_int big-endian, leading zeros stripped, at most 8 bytes"
 status = "implemented"
 realises = ["LeanItsdangerous.intToBytes", "LeanItsdangerous.bytesToInt"]
-theorem = ["LeanItsdangerous.bytesToInt_intToBytes"]
+theorem = ["LeanItsdangerous.bytesToInt_intToBytes", "LeanItsdangerous.intCodec_lawful", "LeanItsdangerous.timestampCodec_lawful"]
 test = ["tests/Conformance.lean::test_int_bytes"]
 
 [[requirement]]
@@ -47,7 +47,7 @@ id = "encoding.want-bytes"
 upstream = "tests/test_itsdangerous/test_encoding.py::test_want_bytes"
 title = "text is encoded as UTF-8"
 status = "implemented"
-realises = ["LeanItsdangerous.Bytes.ofString"]
+realises = ["LeanItsdangerous.Bytes.ofString", "LeanItsdangerous.SecretKeys"]
 test = ["tests/Conformance.lean::test_want_bytes"]
 
 [[requirement]]
@@ -75,7 +75,7 @@ upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_signer"
 title = "unsign(sign(v)) == v"
 status = "implemented"
 realises = ["LeanItsdangerous.Signer.sign", "LeanItsdangerous.Signer.unsign", "LeanItsdangerous.Signer.unsignImpl"]
-theorem = ["LeanItsdangerous.Signer.unsign_sign", "LeanItsdangerous.Signer.session_sign_verify", "LeanItsdangerous.Signer.unsign_sound", "LeanItsdangerous.Signer.unsign_ok_iff"]
+theorem = ["LeanItsdangerous.Signer.unsign_sign", "LeanItsdangerous.Signer.session_sign_verify", "LeanItsdangerous.Signer.unsignImpl_sound", "LeanItsdangerous.Signer.unsign_eq_ok_iff"]
 test = ["tests/Conformance.lean::test_signer"]
 
 [[requirement]]
@@ -84,7 +84,7 @@ upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_no_separato
 title = "a value without the separator raises BadSignature"
 status = "implemented"
 realises = ["LeanItsdangerous.Signer.unsignImpl"]
-theorem = ["LeanItsdangerous.Signer.unsign_sound"]
+theorem = ["LeanItsdangerous.Signer.unsignImpl_sound"]
 test = ["tests/Conformance.lean::test_no_separator"]
 
 [[requirement]]
@@ -93,7 +93,7 @@ upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_broken_sign
 title = "a bad signature raises BadSignature carrying the payload"
 status = "implemented"
 realises = ["LeanItsdangerous.Signer.unsignImpl"]
-theorem = ["LeanItsdangerous.Signer.unsign_sound"]
+theorem = ["LeanItsdangerous.Signer.unsignImpl_sound"]
 test = ["tests/Conformance.lean::test_broken_signature"]
 
 [[requirement]]
@@ -111,7 +111,7 @@ id = "signer.invalid-separator"
 upstream = "tests/test_itsdangerous/test_signer.py::TestSigner::test_invalid_separator"
 title = "a separator that may occur in a signature is rejected"
 status = "deviation"
-realises = ["LeanItsdangerous.SignerConfig.new", "LeanItsdangerous.ValidSep"]
+realises = ["LeanItsdangerous.checkSeparator", "LeanItsdangerous.ValidSep"]
 theorem = ["LeanItsdangerous.Signer.rsplit_signWith"]
 test = ["tests/Conformance.lean::test_invalid_separator"]
 note = "Upstream rejects a separator only when it is a substring of the base64 alphabet; we reject any separator that is empty or contains an alphabet byte. Stricter for multi-byte separators mixing alphabet and other bytes; it is what makes the split provably correct."
@@ -183,7 +183,7 @@ upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_max
 title = "max_age accepted at the boundary, SignatureExpired after, with date_signed"
 status = "implemented"
 realises = ["LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.TimestampSigner.unsignImpl", "LeanItsdangerous.TimestampSigner.checkAge"]
-theorem = ["LeanItsdangerous.TimestampSigner.unsign_signWith", "LeanItsdangerous.TimestampSigner.unsign_maxAge_mono", "LeanItsdangerous.TimestampSigner.unsign_none_of_some", "LeanItsdangerous.TimestampSigner.unsign_expired", "LeanItsdangerous.TimestampSigner.checkAge_eq_none_iff"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsign_signWith", "LeanItsdangerous.TimestampSigner.unsign_maxAge_mono", "LeanItsdangerous.TimestampSigner.unsignImpl_none_of_some", "LeanItsdangerous.TimestampSigner.unsign_expired", "LeanItsdangerous.TimestampSigner.checkAge_eq_none_iff"]
 test = ["tests/Conformance.lean::test_max_age"]
 
 [[requirement]]
@@ -191,10 +191,10 @@ id = "timed.return-timestamp"
 upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_return_timestamp"
 title = "unsign returns the signing timestamp"
 status = "deviation"
-realises = ["LeanItsdangerous.TimestampSigner.unsign"]
+realises = ["LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.getTimestamp"]
 theorem = ["LeanItsdangerous.TimestampSigner.unsign_sign", "LeanItsdangerous.decodeTimestamp_encodeTimestamp"]
 test = ["tests/Conformance.lean::test_return_timestamp"]
-note = "The timestamp is returned as seconds since the epoch (UInt64), not a datetime; `now` is an explicit argument rather than time.time()."
+note = "The timestamp is returned as seconds since the epoch (UInt64), not a datetime; `now` is an explicit argument (getTimestamp reads the clock, as upstream get_timestamp)."
 
 [[requirement]]
 id = "timed.timestamp-missing"
@@ -219,7 +219,7 @@ upstream = "tests/test_itsdangerous/test_timed.py::TestTimestampSigner::test_fut
 title = "a future timestamp is expired"
 status = "implemented"
 realises = ["LeanItsdangerous.TimestampSigner.checkAge"]
-theorem = ["LeanItsdangerous.TimestampSigner.unsign_future"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsignImpl_future"]
 test = ["tests/Conformance.lean::test_future_age"]
 
 [[requirement]]
@@ -236,7 +236,7 @@ upstream = "src/itsdangerous/timed.py::TimestampSigner.unsign"
 title = "an accepted timestamped value was signed by a listed key and is within max_age"
 status = "implemented"
 realises = ["LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.TimestampSigner.SignedBy", "LeanItsdangerous.TimestampSigner.AgeOk"]
-theorem = ["LeanItsdangerous.TimestampSigner.unsign_sound"]
+theorem = ["LeanItsdangerous.TimestampSigner.unsignImpl_sound"]
 test = ["tests/Conformance.lean::test_max_age"]
 
 [[requirement]]
@@ -254,7 +254,7 @@ upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_ser
 title = "loads(dumps(x)) == x"
 status = "implemented"
 realises = ["LeanItsdangerous.Serializer.dumps", "LeanItsdangerous.Serializer.loads", "LeanItsdangerous.Serializer.loadsImpl"]
-theorem = ["LeanItsdangerous.Serializer.loads_dumps", "LeanItsdangerous.Serializer.loads_sound", "LeanItsdangerous.Serializer.loads_signWith"]
+theorem = ["LeanItsdangerous.Serializer.loads_dumps", "LeanItsdangerous.Serializer.loadsImpl_sound", "LeanItsdangerous.Serializer.loadsImpl_signWith"]
 test = ["tests/Conformance.lean::test_serializer"]
 
 [[requirement]]
@@ -262,10 +262,10 @@ id = "serializer.codec"
 upstream = "src/itsdangerous/serializer.py::Serializer.default_serializer"
 title = "the payload format (default json)"
 status = "deviation"
-realises = ["LeanItsdangerous.Codec"]
+realises = ["LeanItsdangerous.Codec", "LeanItsdangerous.Codec.Lawful"]
 theorem = ["LeanItsdangerous.Serializer.loads_dumps"]
 test = ["tests/Conformance.lean::jsonText"]
-note = "The codec is a parameter (Codec alpha, a dumps/loads pair); there is no built-in JSON. lean-starlette plugs in lean-json. Round trips are proved for any codec whose loads inverts dumps."
+note = "The payload codec is a class (Codec alpha, a dumps/loads pair) found by type, as upstream finds json by default; there is no built-in JSON. lean-starlette plugs in lean-json. Round trips are proved for any lawful codec (Codec.Lawful)."
 
 [[requirement]]
 id = "serializer.changed-value"
@@ -273,7 +273,7 @@ upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_cha
 title = "tampered tokens raise BadSignature"
 status = "implemented"
 realises = ["LeanItsdangerous.Serializer.loadsImpl"]
-theorem = ["LeanItsdangerous.Serializer.loads_sound"]
+theorem = ["LeanItsdangerous.Serializer.loadsImpl_sound"]
 test = ["tests/Conformance.lean::test_changed_value"]
 
 [[requirement]]
@@ -299,7 +299,7 @@ upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_loa
 title = "loads_unsafe returns (valid, payload)"
 status = "partial"
 realises = ["LeanItsdangerous.Serializer.loadsUnsafe", "LeanItsdangerous.TimedSerializer.loadsUnsafe"]
-theorem = ["LeanItsdangerous.Serializer.loadsUnsafe_dumps"]
+theorem = ["LeanItsdangerous.Serializer.loadsUnsafeImpl_dumps"]
 test = ["tests/Conformance.lean::test_loads_unsafe"]
 note = "The last part of the upstream test subclasses the signer to drop the payload; signer subclassing has no analogue."
 
@@ -324,7 +324,7 @@ id = "serializer.signer-cls"
 upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_signer_cls"
 title = "a signer class with another key derivation"
 status = "implemented"
-realises = ["LeanItsdangerous.SignerConfig.default"]
+realises = ["LeanItsdangerous.SignerKwargs"]
 test = ["tests/Conformance.lean::test_signer_cls", "tests/Conformance.lean::test_signer_kwargs"]
 note = "Signer classes are configurations: subclassing to change default_key_derivation is passing a SignerConfig."
 
@@ -341,7 +341,7 @@ upstream = "tests/test_itsdangerous/test_serializer.py::TestSerializer::test_fal
 title = "fallback signers are tried after the main one"
 status = "implemented"
 realises = ["LeanItsdangerous.Serializer.unsigners"]
-theorem = ["LeanItsdangerous.Serializer.loads_sound"]
+theorem = ["LeanItsdangerous.Serializer.loadsImpl_sound"]
 test = ["tests/Conformance.lean::test_fallback_signers", "tests/Conformance.lean::test_iter_unsigners"]
 
 [[requirement]]
@@ -358,7 +358,7 @@ upstream = "tests/test_itsdangerous/test_timed.py::TestTimedSerializer::test_max
 title = "timed loads honours max_age and stops at SignatureExpired"
 status = "implemented"
 realises = ["LeanItsdangerous.TimedSerializer.loads", "LeanItsdangerous.TimedSerializer.loadsImpl"]
-theorem = ["LeanItsdangerous.TimedSerializer.loads_dumps", "LeanItsdangerous.TimedSerializer.loads_sound", "LeanItsdangerous.TimedSerializer.loads_signWith"]
+theorem = ["LeanItsdangerous.TimedSerializer.loads_dumps", "LeanItsdangerous.TimedSerializer.loadsImpl_sound", "LeanItsdangerous.TimedSerializer.loadsImpl_signWith"]
 test = ["tests/Conformance.lean::test_max_age", "tests/Conformance.lean::test_return_payload"]
 
 [[requirement]]
@@ -366,8 +366,8 @@ id = "url-safe.serializer"
 upstream = "tests/test_itsdangerous/test_url_safe.py::TestURLSafeSerializer"
 title = "URL-safe serializers base64url the payload"
 status = "implemented"
-realises = ["LeanItsdangerous.urlSafeCodec", "LeanItsdangerous.URLSafeSerializer.ofKey", "LeanItsdangerous.URLSafeTimedSerializer.ofKey"]
-theorem = ["LeanItsdangerous.urlSafeCodec_roundTrip"]
+realises = ["LeanItsdangerous.urlSafeCodec", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new"]
+theorem = ["LeanItsdangerous.urlSafeCodec_lawful"]
 test = ["tests/Conformance.lean::serializerSuite"]
 
 [[requirement]]
@@ -393,7 +393,7 @@ upstream = "docs"
 title = "unsign/loads return refinements"
 status = "implemented"
 realises = ["LeanItsdangerous.Signer.unsign", "LeanItsdangerous.TimestampSigner.unsign", "LeanItsdangerous.Serializer.loads", "LeanItsdangerous.TimedSerializer.loads"]
-theorem = ["LeanItsdangerous.Signer.unsign_map_val", "LeanItsdangerous.TimestampSigner.unsign_map_val", "LeanItsdangerous.Serializer.loads_map_val", "LeanItsdangerous.TimedSerializer.loads_map_val"]
+theorem = ["LeanItsdangerous.Signer.unsign_val", "LeanItsdangerous.TimestampSigner.unsign_val", "LeanItsdangerous.Serializer.loads_val", "LeanItsdangerous.TimedSerializer.loads_val"]
 test = ["tests/Conformance.lean"]
 
 [[requirement]]
@@ -404,3 +404,12 @@ status = "tested"
 realises = ["LeanItsdangerous.Signer.sign", "LeanItsdangerous.Signer.deriveKey", "LeanItsdangerous.TimestampSigner.sign", "LeanItsdangerous.Serializer.dumps", "LeanItsdangerous.TimedSerializer.dumps"]
 test = ["tests/Conformance.lean::kats"]
 note = "Token bytes depend on the trusted SHA/HMAC, so interoperability is tested, not proved. Vectors generated with upstream-spec/.venv python -I against itsdangerous 2.2.0."
+
+[[requirement]]
+id = "api.upstream-shape"
+upstream = "docs/index.rst"
+title = "constructors named and defaulted as upstream: Signer, TimestampSigner, Serializer, TimedSerializer, URLSafeSerializer, URLSafeTimedSerializer; str or bytes keys and values; a list of keys for rotation"
+status = "implemented"
+realises = ["LeanItsdangerous.Signer.new", "LeanItsdangerous.TimestampSigner.new", "LeanItsdangerous.Serializer.new", "LeanItsdangerous.TimedSerializer.new", "LeanItsdangerous.URLSafeSerializer.new", "LeanItsdangerous.URLSafeTimedSerializer.new", "LeanItsdangerous.SecretKeys", "LeanItsdangerous.SignerKwargs"]
+test = ["tests/Conformance.lean"]
+note = "A separator literal is checked at compile time (by decide) where upstream raises ValueError at construction; checkSeparator checks one known only at run time."

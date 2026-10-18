@@ -1,4 +1,5 @@
 import LeanItsdangerous.Proofs.Timed
+import LeanItsdangerous.Proofs.Codec
 import LeanItsdangerous.Specifications.Serializer
 
 /-!
@@ -6,28 +7,14 @@ import LeanItsdangerous.Specifications.Serializer
 
 * `urlSafeCodec_roundTrip`: the URL-safe payload wrapping preserves a codec
   round trip.
-* `loads_dumps` (plain and timed): `loads (dumps x) = x` for a round-tripping
+* `loadsImpl_dumps` (plain and timed): `loads (dumps x) = x` for a round-tripping
   codec, with any salt, and for the timed serializer within `max_age`.
-* `loads_signWith`: key rotation through the serializer.
-* `loads_sound` (plain and timed): what an `ok` result means; the refinement
+* `loadsImpl_signWith`: key rotation through the serializer.
+* `loadsImpl_sound` (plain and timed): what an `ok` result means; the refinement
   `APIs/` returns.
 -/
 
 namespace LeanItsdangerous
-
-theorem b64encode_ne_dot_cons (bs t : Bytes) : b64encode bs ≠ 46 :: t := by
-  intro h
-  have := isAlphabet_of_mem_b64encode (c := 46) (bs := bs) (by rw [h]; exact List.mem_cons_self)
-  exact absurd this (by decide)
-
-/-- The URL-safe wrapping preserves a codec round trip. -/
-theorem urlSafeCodec_roundTrip {α : Type} (c : Codec α) (h : c.RoundTrip) :
-    (urlSafeCodec c).RoundTrip := by
-  intro x
-  simp only [urlSafeCodec]
-  split
-  · rename_i t ht; exact absurd ht (b64encode_ne_dot_cons _ _)
-  · rw [base64Decode_b64encode]; exact h x
 
 namespace Serializer
 
@@ -46,17 +33,17 @@ theorem loadPayload_ok_iff (s : Serializer α) (p : Bytes) (x : α) :
 
 /-- Key rotation through the serializer: a payload signed by the main signer
 with any of the secret keys loads. -/
-theorem loads_signWith (s : Serializer α) (hc : s.codec.RoundTrip) (salt : Option Bytes)
+theorem loadsImpl_signWith (s : Serializer α) (hc : s.codec.Lawful) (salt : Option Bytes)
     {k : Bytes} (hk : k ∈ s.secretKeys) (x : α) :
     s.loadsImpl ((s.makeSigner salt).signWith k (s.dumpPayload x)) salt = .ok x := by
-  have hu := (s.makeSigner salt).unsign_signWith (k := k) hk (s.dumpPayload x)
+  have hu := (s.makeSigner salt).unsignImpl_signWith (k := k) hk (s.dumpPayload x)
   simp only [loadsImpl, unsigners, loadsWith, hu]
   exact (s.loadPayload_ok_iff _ _).mpr (hc x)
 
 /-- `loads (dumps x) = x`, with any salt, for a round-tripping codec. -/
-theorem loads_dumps (s : Serializer α) (hc : s.codec.RoundTrip) (x : α) (salt : Option Bytes) :
+theorem loadsImpl_dumps (s : Serializer α) (hc : s.codec.Lawful) (x : α) (salt : Option Bytes) :
     s.loadsImpl (s.dumps x salt) salt = .ok x :=
-  s.loads_signWith hc salt (Signer.secretKey_mem _) x
+  s.loadsImpl_signWith hc salt (Signer.secretKey_mem _) x
 
 theorem loadsWith_sound (s : Serializer α) (input : Bytes) :
     ∀ (us : List Signer) (last : Option BadSignature) (x : α),
@@ -67,20 +54,20 @@ theorem loadsWith_sound (s : Serializer α) (input : Bytes) :
     simp only [loadsWith] at h
     split at h
     · rename_i p hp
-      obtain ⟨k, hk, hs⟩ := Signer.unsign_sound hp
+      obtain ⟨k, hk, hs⟩ := Signer.unsignImpl_sound hp
       exact ⟨u, List.mem_cons_self, k, hk, p, hs, (s.loadPayload_ok_iff _ _).mp h⟩
     · obtain ⟨u', hu', rest⟩ := s.loadsWith_sound input us _ x h
       exact ⟨u', List.mem_cons_of_mem _ hu', rest⟩
 
 /-- Soundness of `loads`. -/
-theorem loads_sound {s : Serializer α} {input : Bytes} {salt : Option Bytes} {x : α}
+theorem loadsImpl_sound {s : Serializer α} {input : Bytes} {salt : Option Bytes} {x : α}
     (h : s.loadsImpl input salt = .ok x) : s.SignedBy salt input x :=
   s.loadsWith_sound input _ _ x h
 
 /-- `loads_unsafe (dumps x) = (true, x)`. -/
-theorem loadsUnsafe_dumps (s : Serializer α) (hc : s.codec.RoundTrip) (x : α)
+theorem loadsUnsafeImpl_dumps (s : Serializer α) (hc : s.codec.Lawful) (x : α)
     (salt : Option Bytes) : s.loadsUnsafe (s.dumps x salt) salt = .ok (true, some x) := by
-  simp [loadsUnsafe, s.loads_dumps hc]
+  simp [loadsUnsafe, s.loadsImpl_dumps hc]
 
 end Serializer
 
@@ -88,13 +75,13 @@ namespace TimedSerializer
 
 variable {α : Type}
 
-theorem loads_signWith (s : TimedSerializer α) (hc : s.toSerializer.codec.RoundTrip)
+theorem loadsImpl_signWith (s : TimedSerializer α) (hc : s.toSerializer.codec.Lawful)
     (salt : Option Bytes) {k : Bytes} (hk : k ∈ s.toSerializer.secretKeys)
     {maxAge : Option Nat} {now ts : UInt64} (hage : TimestampSigner.AgeOk maxAge now ts) (x : α) :
-    s.loadsImpl ((s.makeSigner salt).signWith k ts (s.toSerializer.dumpPayload x)) maxAge now salt
+    s.loadsImpl ((s.makeSigner salt).signWith k (s.toSerializer.dumpPayload x) ts) maxAge now salt
       = .ok (x, ts) := by
   simp only [loadsImpl, Serializer.unsigners, loadsWith]
-  have := (s.makeSigner salt).unsign_signWith (k := k) hk hage (s.toSerializer.dumpPayload x)
+  have := (s.makeSigner salt).unsignImpl_signWith (k := k) hk hage (s.toSerializer.dumpPayload x)
   simp only [makeSigner] at this ⊢
   rw [this]
   have hl : s.toSerializer.loadPayload (s.toSerializer.dumpPayload x) = .ok x :=
@@ -102,11 +89,11 @@ theorem loads_signWith (s : TimedSerializer α) (hc : s.toSerializer.codec.Round
   simp [Except.map, hl]
 
 /-- `loads (dumps x at ts) at now = (x, ts)` within `max_age`. -/
-theorem loads_dumps (s : TimedSerializer α) (hc : s.toSerializer.codec.RoundTrip) (x : α)
+theorem loadsImpl_dumps (s : TimedSerializer α) (hc : s.toSerializer.codec.Lawful) (x : α)
     (salt : Option Bytes) {maxAge : Option Nat} {now ts : UInt64}
     (hage : TimestampSigner.AgeOk maxAge now ts) :
-    s.loadsImpl (s.dumps ts x salt) maxAge now salt = .ok (x, ts) :=
-  s.loads_signWith hc salt (Signer.secretKey_mem _) hage x
+    s.loadsImpl (s.dumps x ts salt) maxAge now salt = .ok (x, ts) :=
+  s.loadsImpl_signWith hc salt (Signer.secretKey_mem _) hage x
 
 theorem loadsWith_sound (s : TimedSerializer α) (maxAge : Option Nat) (now : UInt64)
     (input : Bytes) :
@@ -119,7 +106,7 @@ theorem loadsWith_sound (s : TimedSerializer α) (maxAge : Option Nat) (now : UI
     simp only [loadsWith] at h
     split at h
     · rename_i p ts hp
-      obtain ⟨hsig, hage⟩ := TimestampSigner.unsign_sound hp
+      obtain ⟨hsig, hage⟩ := TimestampSigner.unsignImpl_sound hp
       cases hl : s.toSerializer.loadPayload p with
       | error e => rw [hl] at h; cases h
       | ok x =>
@@ -133,7 +120,7 @@ theorem loadsWith_sound (s : TimedSerializer α) (maxAge : Option Nat) (now : UI
         · cases h
 
 /-- Soundness of timed `loads`. -/
-theorem loads_sound {s : TimedSerializer α} {input : Bytes} {maxAge : Option Nat} {now : UInt64}
+theorem loadsImpl_sound {s : TimedSerializer α} {input : Bytes} {maxAge : Option Nat} {now : UInt64}
     {salt : Option Bytes} {r : α × UInt64} (h : s.loadsImpl input maxAge now salt = .ok r) :
     s.SignedBy salt maxAge now input r.1 r.2 :=
   s.loadsWith_sound maxAge now input _ _ r h

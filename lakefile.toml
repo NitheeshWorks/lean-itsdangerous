@@ -1,6 +1,6 @@
 name = "LeanItsdangerous"
 version = "0.1.0"
-defaultTargets = ["LeanItsdangerous", "props", "conformance"]
+defaultTargets = ["LeanItsdangerous", "props", "conformance", "quickstart"]
 
 # The verified library. Everything under LeanItsdangerous/ except Transport.lean is a
 # total function and the proof surface; see CONTRIBUTING.md.
@@ -18,3 +18,9 @@ root = "tests.Props"
 [[lean_exe]]
 name = "conformance"
 root = "tests.Conformance"
+
+# The README quickstart, compiled so it cannot drift from the API:
+# `lake exe quickstart`.
+[[lean_exe]]
+name = "quickstart"
+root = "examples.Quickstart"

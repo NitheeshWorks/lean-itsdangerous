@@ -38,7 +38,7 @@ def rawSignature (s : Signer) (secretKey value : Bytes) : Bytes :=
 
 /-- `get_signature`, for a chosen secret key: base64url of the raw signature. -/
 def signatureFor (s : Signer) (secretKey value : Bytes) : Bytes :=
-  b64encode (s.rawSignature secretKey value)
+  base64Encode (s.rawSignature secretKey value)
 
 /-- `secret_key`: the newest (last) key, which signs. -/
 def secretKey (s : Signer) : Bytes := s.secretKeys.getLast s.h_keys
@@ -82,17 +82,17 @@ end Signer
 namespace TimestampSigner
 
 /-- The encoded timestamp: `base64_encode(int_to_bytes(ts))`. -/
-def encodeTimestamp (ts : UInt64) : Bytes := b64encode (intToBytes ts)
+def encodeTimestamp (ts : UInt64) : Bytes := timestampCodec.dumps ts
 
 /-- The inverse: `bytes_to_int(base64_decode(ts_bytes))`. -/
-def decodeTimestamp (b : Bytes) : Option UInt64 := (base64Decode b).bind bytesToInt
+def decodeTimestamp (b : Bytes) : Option UInt64 := (timestampCodec.loads b).toOption
 
 /-- `sign(value)` at time `now`: `value + sep + timestamp + sep + signature`. -/
-def sign (t : TimestampSigner) (now : UInt64) (value : Bytes) : Bytes :=
+def sign (t : TimestampSigner) (value : Bytes) (now : UInt64) : Bytes :=
   t.toSigner.sign (value ++ t.toSigner.sep ++ encodeTimestamp now)
 
 /-- Signing with a chosen key, for the key rotation theorem. -/
-def signWith (t : TimestampSigner) (secretKey : Bytes) (now : UInt64) (value : Bytes) : Bytes :=
+def signWith (t : TimestampSigner) (secretKey : Bytes) (value : Bytes) (now : UInt64) : Bytes :=
   t.toSigner.signWith secretKey (value ++ t.toSigner.sep ++ encodeTimestamp now)
 
 /-- The age check: `age = now - ts`; expired if `age > max_age` or `age < 0`.

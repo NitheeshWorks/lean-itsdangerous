@@ -1,9 +1,10 @@
 import LeanItsdangerous.DataTypes.Alphabet
+import LeanItsdangerous.DataTypes.Codec
 
 /-!
 # base64url without padding, integer bytes, splitting
 
-* `b64encode` / `b64decode`: upstream's `base64_encode` (URL-safe alphabet,
+* `base64Encode` / `b64decode`: upstream's `base64_encode` (URL-safe alphabet,
   `=` padding stripped) and `base64_decode` (padding re-added before
   decoding). Groups of three bytes become four characters; a trailing one or
   two bytes become two or three characters.
@@ -31,8 +32,8 @@ def enc1 (a : UInt8) : Bytes :=
   [encChar (a.toNat / 4), encChar (a.toNat % 4 * 16)]
 
 /-- `base64_encode`: URL-safe base64 with the `=` padding removed. -/
-def b64encode : Bytes → Bytes
-  | a :: b :: c :: rest => enc3 a b c ++ b64encode rest
+def base64Encode : Bytes → Bytes
+  | a :: b :: c :: rest => enc3 a b c ++ base64Encode rest
   | [a, b] => enc2 a b
   | [a] => enc1 a
   | [] => []
@@ -96,6 +97,26 @@ def bytesToNat (bs : Bytes) : Nat := bs.foldl (fun acc b => acc * 256 + b.toNat)
 `struct.error`). -/
 def bytesToInt (bs : Bytes) : Option UInt64 :=
   if bs.length ≤ 8 then some (UInt64.ofNat (bytesToNat bs)) else none
+
+/-! ## The encodings as codecs -/
+
+/-- base64url without padding, as a codec on bytes. -/
+@[instance_reducible] def base64Codec : Codec Bytes where
+  dumps := base64Encode
+  loads s := match base64Decode s with
+    | some b => .ok b
+    | none => .error "Invalid base64-encoded data"
+
+/-- `int_to_bytes` / `bytes_to_int`, as a codec on 64-bit integers. -/
+@[instance_reducible] def intCodec : Codec UInt64 where
+  dumps := intToBytes
+  loads b := match bytesToInt b with
+    | some n => .ok n
+    | none => .error "Malformed timestamp"
+
+/-- The timestamp inside a `TimestampSigner` token: the integer bytes, in
+base64url. -/
+@[instance_reducible] def timestampCodec : Codec UInt64 := intCodec.andThen base64Codec
 
 /-! ## Comparison -/
 

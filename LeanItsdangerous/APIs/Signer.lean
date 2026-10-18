@@ -1,23 +1,49 @@
-import LeanItsdangerous.Proofs.Verified
+import LeanItsdangerous.Proofs.Serializer
 
 /-!
-# APIs: constructors and the refined decoders
+# APIs: the public surface, shaped like itsdangerous
 
-What users call. Constructors check upstream's constructor errors at
-runtime (`ValueError` for a bad separator, `IndexError` for an empty key
-list) and return a value whose invariants then hold by type. The decoders
-(`unsign`, `loads`) return refinements: an `ok` result carries the proof of
-what it means, from `Proofs/`.
+```python
+s = Signer("secret-key")                       # Signer.new "secret-key"
+s.sign("my string")                            # s.sign "my string"
+s.unsign(token)                                # s.unsign token
+TimestampSigner("secret-key").unsign(t, max_age=5)   # (TimestampSigner.new "secret-key").unsign t (maxAge := some 5) now
+URLSafeTimedSerializer("secret-key", salt="auth")    # URLSafeTimedSerializer.new "secret-key" (salt := "auth")
+```
 
-Signing (`Signer.sign`, `TimestampSigner.sign`, `Serializer.dumps`,
-`TimedSerializer.dumps`) needs no refinement: its result is its defining
-equation, and the round trip theorems are stated about it.
+Names, argument order and defaults follow upstream. With `open
+LeanItsdangerous`, a string literal is accepted for any bytes argument (as
+upstream accepts `str`), a secret key may be one key or a non-empty list of
+keys (oldest to newest), and a separator literal is checked at compile time
+(`by decide`), where upstream raises `ValueError` at construction.
 
-Time is explicit: the timestamped operations take `now`, seconds since the
-Unix epoch, where upstream reads `time.time()`.
+The decoders (`unsign`, `loads`) return refinements: an `ok` result carries
+the proof of what it means. `Except.val` forgets the proof; the headline
+theorems (`Proofs/Public.lean`) are stated with it, e.g.
+`(s.unsign (s.sign v)).val = .ok v`.
+
+Time is an argument `now` (seconds since the epoch); `getTimestamp`
+(`Clock.lean`) reads it.
 -/
 
 namespace LeanItsdangerous
+
+/-- Forget the proof carried by a refined result. -/
+def _root_.Except.val {ε α : Type} {p : α → Prop} (r : Except ε {x : α // p x}) : Except ε α :=
+  r.map Subtype.val
+
+/-- Refine a result by a property every `ok` value is proved to have. -/
+def _root_.Except.refine {ε α : Type} {p : α → Prop} (r : Except ε α)
+    (h : ∀ x, r = .ok x → p x) : Except ε {x : α // p x} :=
+  match r, h with
+  | .ok x, h => .ok ⟨x, h x rfl⟩
+  | .error e, _ => .error e
+
+/-- Refining then forgetting is the identity: the one lemma behind every
+public decoder's `*_val` equation. -/
+theorem _root_.Except.val_refine {ε α : Type} {p : α → Prop} (r : Except ε α)
+    (h : ∀ x, r = .ok x → p x) : (r.refine h).val = r := by
+  cases r <;> rfl
 
 /-- Upstream's `ValueError` message for a separator that may occur inside a
 signature. -/
@@ -25,95 +51,88 @@ def separatorError : String :=
   "The given separator cannot be used because it may be contained in the signature itself. " ++
   "ASCII letters, digits, and '-_=' must not be used."
 
+/-- Check a separator only known at run time (a literal is checked at compile
+time instead): upstream's `ValueError`. -/
+def checkSeparator (sep : Bytes) : Except String {s : Bytes // ValidSep s} :=
+  if h : ValidSep sep then .ok ⟨sep, h⟩ else .error separatorError
+
 /-- Upstream's default serializer salt `b"itsdangerous"`. -/
 def defaultSerializerSalt : Bytes := Bytes.ofString "itsdangerous"
 
-namespace SignerConfig
+/-- `secret_key`: one key, or a non-empty list of keys from oldest to newest
+(the newest signs). A string, bytes, or a list literal of either converts. -/
+structure SecretKeys where
+  keys : List Bytes
+  h_keys : keys ≠ []
 
-/-- A configuration with the default separator `.`, which needs no check.
-`algorithm = none` means upstream's default `HMACAlgorithm(digest)`. -/
-def default (keyDerivation : KeyDerivation := .djangoConcat) (digest : Hash := sha1)
-    (algorithm : Option SigningAlgorithm := none) : SignerConfig where
-  sep := defaultSep
-  h_sep := defaultSep_valid
-  keyDerivation := keyDerivation
-  digest := digest
-  algorithm := algorithm.getD (hmacAlgorithm digest)
+instance : Coe String SecretKeys := ⟨fun k => ⟨[Bytes.ofString k], List.cons_ne_nil _ _⟩⟩
+instance : Coe Bytes SecretKeys := ⟨fun k => ⟨[k], List.cons_ne_nil _ _⟩⟩
+instance {k : String} {ks : List String} : CoeDep (List String) (k :: ks) SecretKeys :=
+  ⟨⟨(k :: ks).map Bytes.ofString, by simp⟩⟩
+instance {k : Bytes} {ks : List Bytes} : CoeDep (List Bytes) (k :: ks) SecretKeys :=
+  ⟨⟨k :: ks, List.cons_ne_nil _ _⟩⟩
 
-/-- A configuration with a chosen separator: `ValueError` (here an `error`)
-if the separator is empty or contains an alphabet byte. -/
-def new (sep : Bytes) (keyDerivation : KeyDerivation := .djangoConcat) (digest : Hash := sha1)
-    (algorithm : Option SigningAlgorithm := none) : Except String SignerConfig :=
-  if h : ValidSep sep then
-    .ok { sep, h_sep := h, keyDerivation, digest, algorithm := algorithm.getD (hmacAlgorithm digest) }
-  else .error separatorError
+/-- Upstream's `signer_kwargs`: everything about a signer but its keys and
+salt, with upstream's defaults. -/
+structure SignerKwargs where
+  /-- `sep`, default `b"."` -/
+  sep : Bytes := defaultSep
+  h_sep : ValidSep sep := by decide
+  /-- `key_derivation`, default `"django-concat"` -/
+  keyDerivation : KeyDerivation := .djangoConcat
+  /-- `digest_method`, default SHA-1 -/
+  digestMethod : Hash := sha1
+  /-- `algorithm`, default `HMACAlgorithm(digest_method)` -/
+  algorithm : Option SigningAlgorithm := none
 
-end SignerConfig
+/-- The configuration the implementation uses. -/
+def SignerKwargs.toConfig (k : SignerKwargs) : SignerConfig where
+  sep := k.sep
+  h_sep := k.h_sep
+  keyDerivation := k.keyDerivation
+  digest := k.digestMethod
+  algorithm := k.algorithm.getD (hmacAlgorithm k.digestMethod)
 
 namespace Signer
 
-/-- A signer from a configuration, keys and salt. `IndexError` (here an
-`error`) for an empty key list, which upstream raises on first use. -/
-def ofConfig (cfg : SignerConfig) (secretKeys : List Bytes) (salt : Bytes := defaultSignerSalt) :
-    Except String Signer :=
-  if h : secretKeys = [] then .error "list index out of range"
-  else .ok { cfg with secretKeys, h_keys := h, salt }
-
-/-- `Signer(secret_key)` with every default (`.`, django-concat, HMAC-SHA1,
-salt `itsdangerous.Signer`). -/
-def ofKey (secretKey : Bytes) (salt : Bytes := defaultSignerSalt)
-    (cfg : SignerConfig := SignerConfig.default) : Signer :=
-  { cfg with secretKeys := [secretKey], h_keys := List.cons_ne_nil _ _, salt }
-
-/-- `Signer([k1, k2, ...])`, oldest to newest; the newest signs. -/
-def ofKeys (secretKeys : List Bytes) (h : secretKeys ≠ []) (salt : Bytes := defaultSignerSalt)
-    (cfg : SignerConfig := SignerConfig.default) : Signer :=
-  { cfg with secretKeys, h_keys := h, salt }
+/-- `Signer(secret_key, salt, sep, key_derivation, digest_method, algorithm)`. -/
+def new (secretKey : SecretKeys) (salt : Bytes := defaultSignerSalt) (sep : Bytes := defaultSep)
+    (h_sep : ValidSep sep := by decide) (keyDerivation : KeyDerivation := .djangoConcat)
+    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none) : Signer :=
+  { ({ sep, h_sep, keyDerivation, digestMethod, algorithm } : SignerKwargs).toConfig with
+    secretKeys := secretKey.keys, h_keys := secretKey.h_keys, salt }
 
 /-- `unsign(signed_value)`. On success, the value together with the proof
 that a key in the list signed it. -/
-def unsign (s : Signer) (input : Bytes) :
-    Except BadSignature {v : Bytes // ∃ k ∈ s.secretKeys, s.signWith k v = input} :=
-  match h : s.unsignImpl input with
-  | .ok v => .ok ⟨v, unsign_sound h⟩
-  | .error e => .error e
+def unsign (s : Signer) (signedValue : Bytes) :
+    Except BadSignature {v : Bytes // ∃ k ∈ s.secretKeys, s.signWith k v = signedValue} :=
+  (s.unsignImpl signedValue).refine fun _ h => unsignImpl_sound h
 
-theorem unsign_map_val (s : Signer) (input : Bytes) :
-    (s.unsign input).map Subtype.val = s.unsignImpl input := by
-  unfold unsign; split <;> rename_i h <;> simp [h, Except.map]
-
-/-- The round trip, through the refined API. -/
-theorem unsign_sign_val (s : Signer) (v : Bytes) :
-    (s.unsign (s.sign v)).map Subtype.val = .ok v := by
-  rw [unsign_map_val, unsign_sign]
+theorem unsign_val (s : Signer) (signedValue : Bytes) :
+    (s.unsign signedValue).val = s.unsignImpl signedValue := Except.val_refine _ _
 
 end Signer
 
 namespace TimestampSigner
 
-/-- `TimestampSigner(secret_key)` with every default: what Starlette's
-`SessionMiddleware` constructs. -/
-def ofKey (secretKey : Bytes) (salt : Bytes := defaultSignerSalt)
-    (cfg : SignerConfig := SignerConfig.default) : TimestampSigner :=
-  ⟨Signer.ofKey secretKey salt cfg⟩
-
-/-- `TimestampSigner([k1, k2, ...])`. -/
-def ofKeys (secretKeys : List Bytes) (h : secretKeys ≠ []) (salt : Bytes := defaultSignerSalt)
-    (cfg : SignerConfig := SignerConfig.default) : TimestampSigner :=
-  ⟨Signer.ofKeys secretKeys h salt cfg⟩
+/-- `TimestampSigner(secret_key, salt, sep, key_derivation, digest_method,
+algorithm)`: what Starlette's `SessionMiddleware` constructs. -/
+def new (secretKey : SecretKeys) (salt : Bytes := defaultSignerSalt) (sep : Bytes := defaultSep)
+    (h_sep : ValidSep sep := by decide) (keyDerivation : KeyDerivation := .djangoConcat)
+    (digestMethod : Hash := sha1) (algorithm : Option SigningAlgorithm := none) : TimestampSigner :=
+  ⟨Signer.new secretKey salt sep h_sep keyDerivation digestMethod algorithm⟩
 
 /-- `unsign(signed_value, max_age, return_timestamp=True)` at time `now`. On
 success, the value and timestamp, with the proof that a key in the list
 signed them and that the timestamp passes the age check. -/
-def unsign (t : TimestampSigner) (input : Bytes) (maxAge : Option Nat := none) (now : UInt64) :
-    Except BadData {r : Bytes × UInt64 // t.SignedBy input r.1 r.2 ∧ AgeOk maxAge now r.2} :=
-  match h : t.unsignImpl maxAge now input with
-  | .ok r => .ok ⟨r, unsign_sound h⟩
-  | .error e => .error e
+def unsign (t : TimestampSigner) (signedValue : Bytes) (maxAge : Option Nat := none)
+    (now : UInt64) :
+    Except BadData {r : Bytes × UInt64 // t.SignedBy signedValue r.1 r.2 ∧ AgeOk maxAge now r.2} :=
+  (t.unsignImpl maxAge now signedValue).refine fun _ h => unsignImpl_sound h
 
-theorem unsign_map_val (t : TimestampSigner) (input : Bytes) (maxAge : Option Nat) (now : UInt64) :
-    (t.unsign input maxAge now).map Subtype.val = t.unsignImpl maxAge now input := by
-  unfold unsign; split <;> rename_i h <;> simp [h, Except.map]
+theorem unsign_val (t : TimestampSigner) (signedValue : Bytes) (maxAge : Option Nat) (now : UInt64) :
+    (t.unsign signedValue maxAge now).val = t.unsignImpl maxAge now signedValue :=
+  Except.val_refine _ _
 
 end TimestampSigner
 
@@ -122,73 +141,78 @@ namespace Serializer
 variable {α : Type}
 
 /-- `Serializer(secret_key, salt, serializer, signer_kwargs, fallback_signers)`.
-`salt = none` is upstream's `salt=None` (the signer's own default). -/
-def new (secretKeys : List Bytes) (codec : Codec α) (salt : Option Bytes := some defaultSerializerSalt)
-    (signer : SignerConfig := SignerConfig.default) (fallbacks : List SignerConfig := []) :
-    Except String (Serializer α) :=
-  if h : secretKeys = [] then .error "list index out of range"
-  else .ok { secretKeys, h_keys := h, salt, codec, signer, fallbacks }
-
-/-- A serializer with a single key and every other default. -/
-def ofKey (secretKey : Bytes) (codec : Codec α) (salt : Option Bytes := some defaultSerializerSalt)
-    (signer : SignerConfig := SignerConfig.default) (fallbacks : List SignerConfig := []) :
-    Serializer α :=
-  { secretKeys := [secretKey], h_keys := List.cons_ne_nil _ _, salt, codec, signer, fallbacks }
+The payload codec is found by type (`[Codec α]`), as upstream defaults to
+`json`; pass `(serializer := c)` to choose another. `salt := none` is
+upstream's `salt=None` (the signer's own default salt). -/
+def new (secretKey : SecretKeys) (salt : Option Bytes := some defaultSerializerSalt)
+    [serializer : Codec α] (signerKwargs : SignerKwargs := {})
+    (fallbackSigners : List SignerKwargs := []) : Serializer α where
+  secretKeys := secretKey.keys
+  h_keys := secretKey.h_keys
+  salt := salt
+  codec := serializer
+  signer := signerKwargs.toConfig
+  fallbacks := fallbackSigners.map SignerKwargs.toConfig
 
 /-- `loads(s, salt)`. On success, the object with the proof that it is a
 payload signed by one of the unsigners. -/
-def loads (s : Serializer α) (input : Bytes) (salt : Option Bytes := none) :
-    Except BadData {x : α // s.SignedBy salt input x} :=
-  match h : s.loadsImpl input salt with
-  | .ok x => .ok ⟨x, loads_sound h⟩
-  | .error e => .error e
+def loads (s : Serializer α) (token : Bytes) (salt : Option Bytes := none) :
+    Except BadData {x : α // s.SignedBy salt token x} :=
+  (s.loadsImpl token salt).refine fun _ h => loadsImpl_sound h
 
-theorem loads_map_val (s : Serializer α) (input : Bytes) (salt : Option Bytes) :
-    (s.loads input salt).map Subtype.val = s.loadsImpl input salt := by
-  unfold loads; split <;> rename_i h <;> simp [h, Except.map]
+theorem loads_val (s : Serializer α) (token : Bytes) (salt : Option Bytes) :
+    (s.loads token salt).val = s.loadsImpl token salt := Except.val_refine _ _
 
 end Serializer
 
 /-- `URLSafeSerializer`: a serializer whose payload is base64url-encoded,
 safe in URLs and cookies. -/
-def URLSafeSerializer.ofKey {α : Type} (secretKey : Bytes) (codec : Codec α)
-    (salt : Option Bytes := some defaultSerializerSalt)
-    (signer : SignerConfig := SignerConfig.default) (fallbacks : List SignerConfig := []) :
-    Serializer α :=
-  Serializer.ofKey secretKey (urlSafeCodec codec) salt signer fallbacks
+abbrev URLSafeSerializer (α : Type) := Serializer α
+
+/-- `URLSafeSerializer(secret_key, salt, serializer, signer_kwargs,
+fallback_signers)`. -/
+def URLSafeSerializer.new {α : Type} (secretKey : SecretKeys)
+    (salt : Option Bytes := some defaultSerializerSalt) [serializer : Codec α]
+    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := []) :
+    URLSafeSerializer α :=
+  Serializer.new secretKey salt (serializer := urlSafeCodec serializer) signerKwargs fallbackSigners
 
 namespace TimedSerializer
 
 variable {α : Type}
 
-/-- `TimedSerializer(secret_key, ...)` with a single key. -/
-def ofKey (secretKey : Bytes) (codec : Codec α) (salt : Option Bytes := some defaultSerializerSalt)
-    (signer : SignerConfig := SignerConfig.default) (fallbacks : List SignerConfig := []) :
-    TimedSerializer α :=
-  ⟨Serializer.ofKey secretKey codec salt signer fallbacks⟩
+/-- `TimedSerializer(secret_key, salt, serializer, signer_kwargs,
+fallback_signers)`. -/
+def new (secretKey : SecretKeys) (salt : Option Bytes := some defaultSerializerSalt)
+    [serializer : Codec α] (signerKwargs : SignerKwargs := {})
+    (fallbackSigners : List SignerKwargs := []) : TimedSerializer α :=
+  ⟨Serializer.new secretKey salt signerKwargs fallbackSigners⟩
 
 /-- `loads(s, max_age, return_timestamp=True, salt)` at time `now`. On
 success, the object and its timestamp with the proof that they come from a
 signed, fresh payload. -/
-def loads (s : TimedSerializer α) (input : Bytes) (maxAge : Option Nat := none) (now : UInt64)
+def loads (s : TimedSerializer α) (token : Bytes) (maxAge : Option Nat := none) (now : UInt64)
     (salt : Option Bytes := none) :
-    Except BadData {r : α × UInt64 // s.SignedBy salt maxAge now input r.1 r.2} :=
-  match h : s.loadsImpl input maxAge now salt with
-  | .ok r => .ok ⟨r, loads_sound h⟩
-  | .error e => .error e
+    Except BadData {r : α × UInt64 // s.SignedBy salt maxAge now token r.1 r.2} :=
+  (s.loadsImpl token maxAge now salt).refine fun _ h => loadsImpl_sound h
 
-theorem loads_map_val (s : TimedSerializer α) (input : Bytes) (maxAge : Option Nat) (now : UInt64)
+theorem loads_val (s : TimedSerializer α) (token : Bytes) (maxAge : Option Nat) (now : UInt64)
     (salt : Option Bytes) :
-    (s.loads input maxAge now salt).map Subtype.val = s.loadsImpl input maxAge now salt := by
-  unfold loads; split <;> rename_i h <;> simp [h, Except.map]
+    (s.loads token maxAge now salt).val = s.loadsImpl token maxAge now salt :=
+  Except.val_refine _ _
 
 end TimedSerializer
 
 /-- `URLSafeTimedSerializer`. -/
-def URLSafeTimedSerializer.ofKey {α : Type} (secretKey : Bytes) (codec : Codec α)
-    (salt : Option Bytes := some defaultSerializerSalt)
-    (signer : SignerConfig := SignerConfig.default) (fallbacks : List SignerConfig := []) :
-    TimedSerializer α :=
-  TimedSerializer.ofKey secretKey (urlSafeCodec codec) salt signer fallbacks
+abbrev URLSafeTimedSerializer (α : Type) := TimedSerializer α
+
+/-- `URLSafeTimedSerializer(secret_key, salt, serializer, signer_kwargs,
+fallback_signers)`. -/
+def URLSafeTimedSerializer.new {α : Type} (secretKey : SecretKeys)
+    (salt : Option Bytes := some defaultSerializerSalt) [serializer : Codec α]
+    (signerKwargs : SignerKwargs := {}) (fallbackSigners : List SignerKwargs := []) :
+    URLSafeTimedSerializer α :=
+  TimedSerializer.new secretKey salt (serializer := urlSafeCodec serializer) signerKwargs
+    fallbackSigners
 
 end LeanItsdangerous
