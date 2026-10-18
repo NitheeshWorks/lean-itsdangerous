@@ -1,8 +1,6 @@
 import LeanItsdangerous
 import examples.Signer
 import examples.Timed
-import examples.Encoding
-import examples.Exceptions
 
 /-!
 # Conformance cases
@@ -539,6 +537,53 @@ def errMsg {α : Type} : Except BadData α → String
   | .error e => e.message
   | .ok _ => "accepted"
 
+/-! The documented members of the two autodoc pages, `docs/encoding.rst` and
+`docs/exceptions.rst` (no code blocks upstream, so no example files):
+`base64_encode`/`base64_decode`, and each exception's attributes and its
+traceback line. Values from itsdangerous 2.2.0. -/
+
+namespace Autodoc
+def signer := Signer.new "secret-key"
+def timed := TimestampSigner.new "secret-key"
+def serializer := Serializer.new "secret-key"
+def encoded := base64Encode "無限"
+def decoded := base64Decode "54Sh6ZmQ"
+def invalid := base64Decode "12345"
+def badSignature := signer.unsign "my string.AAAAAAAAAAAAAAAAAAAAAAAAAAA"
+def timestampMissing := timed.unsign (signer.sign "value") (now := 1700000000)
+def expired := timed.unsign (timed.sign "value" 1700000000) (maxAge := 5) (now := 1700000015)
+def badPayload := serializer.loads (serializer.makeSigner.sign [0xff, 0xfe])
+end Autodoc
+
+def autodocCases : List Case := [
+  docCase "encoding.rst" "base64_encode / base64_decode"
+    (Autodoc.encoded == b "54Sh6ZmQ" && Autodoc.decoded == some (b "無限") && Autodoc.invalid == none)
+    s!"{Autodoc.encoded}",
+  docCase "exceptions.rst" "BadSignature.payload and its traceback line"
+    ((match Autodoc.badSignature with
+      | .error e => e.message == "Signature b'AAAAAAAAAAAAAAAAAAAAAAAAAAA' does not match" &&
+          e.payload == some (b "my string") &&
+          toString e == "BadSignature: Signature b'AAAAAAAAAAAAAAAAAAAAAAAAAAA' does not match"
+      | .ok _ => false)) "payload",
+  docCase "exceptions.rst" "BadTimeSignature: timestamp missing, date_signed None"
+    ((match Autodoc.timestampMissing with
+      | .error e => e.isBadTimeSignature && e.message == "timestamp missing" && e.dateSigned == none &&
+          toString e == "BadTimeSignature: timestamp missing"
+      | .ok _ => false)) "missing",
+  docCase "exceptions.rst" "SignatureExpired: subclasses, date_signed, traceback line"
+    ((match Autodoc.expired with
+      | .error e => e.isSignatureExpired && e.isBadTimeSignature && e.isBadSignature &&
+          e.payload == some (b "value") &&
+          (e.dateSigned.map toString) == some "2023-11-14 22:13:20+00:00" &&
+          toString e == "SignatureExpired: Signature age 15 > 5 seconds"
+      | .ok _ => false)) "expired",
+  docCase "exceptions.rst" "BadPayload: message and original_error"
+    ((match Autodoc.badPayload with
+      | .error (.badPayload m (some _)) =>
+          m == "Could not load the payload because an exception occurred on unserializing the data."
+      | _ => false)) "payload"
+]
+
 def docsCases : List Case := [
   docCase "signer.rst#block-1" "Signer.sign"
     (Examples.Signer.signed == b "my string.wh6tMHxLgJqB6oY1uT73iMlyrOA") s!"{Examples.Signer.signed}",
@@ -554,29 +599,7 @@ def docsCases : List Case := [
      (match Examples.Timed.expired with
       | .error e => (repr e.dateSigned).pretty ==
           "some datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=datetime.timezone.utc)"
-      | .ok _ => false)) "expired",
-  docCase "encoding.rst" "base64_encode / base64_decode"
-    (Examples.Encoding.encoded == b "54Sh6ZmQ" && Examples.Encoding.decoded == some (b "無限") &&
-     Examples.Encoding.invalid == none) s!"{Examples.Encoding.encoded}",
-  docCase "exceptions.rst" "BadSignature.payload"
-    ((match Examples.Exceptions.badSignature with
-      | .error e => e.message == "Signature b'AAAAAAAAAAAAAAAAAAAAAAAAAAA' does not match" &&
-          e.payload == some (b "my string")
-      | .ok _ => false)) "payload",
-  docCase "exceptions.rst" "BadTimeSignature: timestamp missing"
-    ((match Examples.Exceptions.timestampMissing with
-      | .error e => e.isBadTimeSignature && e.message == "timestamp missing" && e.dateSigned == none
-      | .ok _ => false)) "missing",
-  docCase "exceptions.rst" "SignatureExpired carries date_signed"
-    ((match Examples.Exceptions.expired with
-      | .error e => e.isSignatureExpired && e.isBadSignature &&
-          (e.dateSigned.map toString) == some "2023-11-14 22:13:20+00:00"
-      | .ok _ => false)) "expired",
-  docCase "exceptions.rst" "BadPayload message"
-    ((match Examples.Exceptions.badPayload with
-      | .error e => e.isBadPayload &&
-          e.message == "Could not load the payload because an exception occurred on unserializing the data."
-      | .ok _ => false)) "payload"
+      | .ok _ => false)) "expired"
 ]
 
 /-- `date_signed` renders as Python renders a `datetime`, for timestamps
@@ -596,7 +619,7 @@ def dateTimeCases : List Case :=
 def cases : List Case :=
   encodingCases ++ signerSuite "TestSigner" (fun s => plainSUT s) ++
   signerSuite "TestTimestampSigner" (fun s => timedSUT s) ++ timedSignerCases ++
-  serializerCases ++ otherSerializerCases ++ kats.map katCase ++ docsCases ++ dateTimeCases
+  serializerCases ++ otherSerializerCases ++ kats.map katCase ++ docsCases ++ autodocCases ++ dateTimeCases
 
 def main : IO UInt32 := do
   let mut failures := 0

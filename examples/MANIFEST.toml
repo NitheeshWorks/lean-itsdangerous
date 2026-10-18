@@ -2,7 +2,8 @@
 # stack-tools/check-examples.py). itsdangerous ships no example programs, so
 # its examples are the Python code blocks of its docs pages and README, one
 # Lean file per page. encoding.rst and exceptions.rst are autodoc pages with no
-# code block; their files exercise exactly the members those pages document.
+# code block, so they have no port; tests/Conformance.lean covers what they
+# document.
 
 [meta]
 upstream = "itsdangerous"
@@ -133,14 +134,14 @@ output = "examples/json/Check.lean::docs/concepts.rst block 5"
 
 [[example]]
 upstream = "docs/encoding.rst"
-lean = "examples/Encoding.lean"
-status = "ported"
-reason = ""
-output = "tests/Conformance.lean::docs/encoding.rst"
+lean = ""
+status = "excluded"
+reason = "autodoc page, no code blocks"
+output = "tests/Conformance.lean::autodocCases"
 
 [[example]]
 upstream = "docs/exceptions.rst"
-lean = "examples/Exceptions.lean"
-status = "ported"
-reason = ""
-output = "tests/Conformance.lean::docs/exceptions.rst"
+lean = ""
+status = "excluded"
+reason = "autodoc page, no code blocks"
+output = "tests/Conformance.lean::autodocCases"

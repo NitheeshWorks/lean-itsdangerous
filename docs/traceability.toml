@@ -23,7 +23,7 @@ title = "base64url encode without padding; decode inverts encode"
 status = "implemented"
 realises = ["LeanItsdangerous.base64Encode", "LeanItsdangerous.b64decode", "LeanItsdangerous.base64Decode"]
 theorem = ["LeanItsdangerous.Codec.Lawful.andThen", "LeanItsdangerous.base64Codec_lawful", "LeanItsdangerous.b64decode_base64Encode", "LeanItsdangerous.base64Decode_base64Encode", "LeanItsdangerous.length_base64Encode", "LeanItsdangerous.base64Encode_injective"]
-test = ["tests/Conformance.lean::test_base64", "tests/Props.lean"]
+test = ["tests/Conformance.lean::test_base64", "tests/Props.lean", "tests/Conformance.lean::autodocCases"]
 
 [[requirement]]
 id = "encoding.base64-bad"
@@ -386,7 +386,7 @@ upstream = "src/itsdangerous/exc.py"
 title = "BadData, BadSignature, BadTimeSignature, SignatureExpired, BadHeader, BadPayload"
 status = "implemented"
 realises = ["LeanItsdangerous.BadData", "LeanItsdangerous.BadSignature", "LeanItsdangerous.BadData.isBadSignature", "LeanItsdangerous.BadData.isBadTimeSignature", "LeanItsdangerous.BadData.isSignatureExpired"]
-test = ["tests/Conformance.lean"]
+test = ["tests/Conformance.lean", "tests/Conformance.lean::autodocCases"]
 
 [[requirement]]
 id = "api.refinements"

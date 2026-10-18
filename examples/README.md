@@ -15,11 +15,10 @@ names the page, and each block appears with its Python above its Lean.
 | 4 | `docs/signer.rst` "Signing Interface" | [`Signer.lean`](Signer.lean) | 3 |
 | 5 | `docs/timed.rst` "Signing With Timestamps" | [`Timed.lean`](Timed.lean) | 2 |
 | 6 | `docs/url_safe.rst` "URL Safe Serialization" | [`json/UrlSafe.lean`](json/UrlSafe.lean) | 1 |
-| 7 | `docs/encoding.rst` "Encoding Utilities" (autodoc page) | [`Encoding.lean`](Encoding.lean) | – |
-| 8 | `docs/exceptions.rst` "Exceptions" (autodoc page) | [`Exceptions.lean`](Exceptions.lean) | – |
+| – | `docs/encoding.rst`, `docs/exceptions.rst` | excluded: autodoc pages, no code blocks | – |
 
-The two autodoc pages have no code block upstream; their files exercise
-exactly the functions and attributes those pages document.
+The functions and exception attributes those two autodoc pages document are
+covered by `tests/Conformance.lean` (`autodocCases`) instead.
 
 ## Two packages
 

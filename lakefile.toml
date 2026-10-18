@@ -25,4 +25,4 @@ root = "tests.Conformance"
 # value these print against upstream itsdangerous 2.2.0.
 [[lean_lib]]
 name = "Examples"
-roots = ["examples.Signer", "examples.Timed", "examples.Encoding", "examples.Exceptions"]
+roots = ["examples.Signer", "examples.Timed"]
